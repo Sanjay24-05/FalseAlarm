@@ -1,0 +1,11 @@
+[
+  {
+    "timestamp": "2026-04-12T14:45:00Z",
+    "username": "jsmith",
+    "hostname": "WS-JSMITH",
+    "src_ip": "10.0.5.10",
+    "name": "Endpoint malware detection",
+    "severity": "high",
+    "category": "endpoint"
+  }
+]

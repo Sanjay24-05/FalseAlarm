@@ -1,0 +1,10 @@
+[
+  {
+    "timestamp": "2026-04-12T14:39:00Z",
+    "username": "jsmith",
+    "hostname": "WS-JSMITH",
+    "src_ip": "10.0.5.10",
+    "query": "evil-drop.example",
+    "resolved_ip": "198.51.100.77"
+  }
+]

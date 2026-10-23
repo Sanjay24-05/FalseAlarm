@@ -1,0 +1,16 @@
+{
+  "assets": [
+    {"hostname": "FS-01", "ip": "10.0.1.20", "sensitivity": "low", "role": "file-server"}
+  ],
+  "corporate_vpn_ranges": ["10.8.0.0/24"],
+  "known_good_ranges": ["10.8.0.0/24"],
+  "scanner_ranges": [],
+  "baselines": {
+    "ajones": {
+      "typical_sources": ["10.8.0.22"],
+      "typical_hosts": ["WS-AJONES"],
+      "typical_file_servers": ["FS-01"],
+      "typical_outbound_bytes": 20000000
+    }
+  }
+}

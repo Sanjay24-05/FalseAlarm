@@ -1,0 +1,11 @@
+[
+  {
+    "timestamp": "2026-04-12T14:44:00Z",
+    "username": "jsmith",
+    "hostname": "WS-JSMITH",
+    "src_ip": "10.0.5.10",
+    "action": "malware_detected",
+    "file_hash": "0123456789abcdef0123456789abcdef",
+    "severity": "high"
+  }
+]

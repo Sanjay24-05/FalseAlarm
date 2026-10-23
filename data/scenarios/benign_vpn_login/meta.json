@@ -1,0 +1,6 @@
+{
+  "id": "benign_vpn_login",
+  "title": "Benign VPN login",
+  "description": "An employee mistypes a password and then signs in from a known corporate VPN, followed by ordinary file-server use.",
+  "expected_verdict": "likely_benign"
+}

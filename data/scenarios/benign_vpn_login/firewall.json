@@ -1,0 +1,13 @@
+[
+  {
+    "timestamp": "2026-04-12T09:20:00Z",
+    "username": "ajones",
+    "hostname": "WS-AJONES",
+    "src_ip": "10.8.0.22",
+    "dst_ip": "10.0.1.20",
+    "dst_host": "FS-01",
+    "action": "allow",
+    "direction": "internal",
+    "bytes": 1500000
+  }
+]

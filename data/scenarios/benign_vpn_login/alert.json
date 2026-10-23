@@ -1,0 +1,16 @@
+{
+  "source": "demo-siem",
+  "name": "Multiple failed logins followed by success",
+  "description": "User ajones failed to authenticate and then succeeded from corporate VPN address 10.8.0.22.",
+  "severity": "medium",
+  "detected_at": "2026-04-12T09:16:00Z",
+  "src_ip": "10.8.0.22",
+  "dst_ip": "10.0.0.20",
+  "username": "ajones",
+  "hostname": "WS-AJONES",
+  "file_hashes": [],
+  "domains": [],
+  "urls": [],
+  "mitre_techniques": ["T1110", "T1078"],
+  "raw": {"rule_id": "AUTH-BRUTE-SUCCESS"}
+}

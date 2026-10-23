@@ -1,0 +1,16 @@
+{
+  "source": "demo-siem",
+  "name": "Multiple failed logins followed by success",
+  "description": "User jsmith failed to authenticate several times and then succeeded from external address 203.0.113.50.",
+  "severity": "high",
+  "detected_at": "2026-04-12T14:26:00Z",
+  "src_ip": "203.0.113.50",
+  "dst_ip": "10.0.0.20",
+  "username": "jsmith",
+  "hostname": "WS-JSMITH",
+  "file_hashes": [],
+  "domains": [],
+  "urls": [],
+  "mitre_techniques": ["T1110", "T1078"],
+  "raw": {"rule_id": "AUTH-BRUTE-SUCCESS"}
+}

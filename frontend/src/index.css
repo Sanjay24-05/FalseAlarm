@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, "Courier New", monospace;
+  --color-bg: #0a0e14;
+  --color-panel: #121820;
+  --color-panel-2: #18212c;
+  --color-line: #2a3848;
+  --color-text: #d7e0ea;
+  --color-muted: #8b9bb0;
+  --color-faint: #62758a;
+  --color-accent: #3dbeb6;
+  --color-warn: #e0a34a;
+  --color-danger: #e15d5d;
+  --color-ok: #5dbe7e;
+  --color-info: #6aa4e0;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+  }
+
+  ::selection {
+    background: #1a4a47;
+    color: #e7fffc;
+  }
+}
+
+.loading-bar {
+  position: relative;
+  height: 2px;
+  overflow: hidden;
+  background: var(--color-line);
+}
+
+.loading-bar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 30%;
+  background: var(--color-accent);
+  animation: load-sweep 1.05s ease-in-out infinite;
+}
+
+@keyframes load-sweep {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .loading-bar::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.7;
+  }
+}

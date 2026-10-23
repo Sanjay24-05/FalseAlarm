@@ -1,0 +1,23 @@
+[
+  {
+    "timestamp": "2026-04-12T14:28:00Z",
+    "username": "jsmith",
+    "hostname": "WS-JSMITH",
+    "src_ip": "10.0.5.10",
+    "dst_ip": "10.0.1.50",
+    "dst_host": "FS-FINANCE",
+    "action": "allow",
+    "direction": "internal",
+    "bytes": 2400000
+  },
+  {
+    "timestamp": "2026-04-12T14:40:00Z",
+    "username": "jsmith",
+    "hostname": "WS-JSMITH",
+    "src_ip": "10.0.5.10",
+    "dst_ip": "198.51.100.77",
+    "action": "allow",
+    "direction": "outbound",
+    "bytes": 250000000
+  }
+]

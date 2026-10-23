@@ -1,0 +1,6 @@
+{
+  "id": "account_compromise",
+  "title": "Account compromise",
+  "description": "An employee account fails authentication several times, succeeds from the same external address, then reaches a sensitive file server and sends an unusual outbound transfer.",
+  "expected_verdict": "confirmed_threat"
+}

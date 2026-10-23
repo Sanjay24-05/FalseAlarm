@@ -1,0 +1,6 @@
+[
+  {"timestamp": "2026-04-12T09:10:00Z", "username": "ajones", "src_ip": "10.8.0.22", "dst_ip": "10.0.0.20", "hostname": "DC-01", "action": "failure"},
+  {"timestamp": "2026-04-12T09:11:00Z", "username": "ajones", "src_ip": "10.8.0.22", "dst_ip": "10.0.0.20", "hostname": "DC-01", "action": "failure"},
+  {"timestamp": "2026-04-12T09:12:00Z", "username": "ajones", "src_ip": "10.8.0.22", "dst_ip": "10.0.0.20", "hostname": "DC-01", "action": "failure"},
+  {"timestamp": "2026-04-12T09:13:20Z", "username": "ajones", "src_ip": "10.8.0.22", "dst_ip": "10.0.0.20", "hostname": "DC-01", "action": "success"}
+]

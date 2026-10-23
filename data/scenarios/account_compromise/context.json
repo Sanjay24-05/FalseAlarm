@@ -1,0 +1,17 @@
+{
+  "assets": [
+    {"hostname": "FS-FINANCE", "ip": "10.0.1.50", "sensitivity": "critical", "role": "file-server"},
+    {"hostname": "DC-01", "ip": "10.0.0.20", "sensitivity": "medium", "role": "domain-controller"}
+  ],
+  "corporate_vpn_ranges": ["10.8.0.0/24"],
+  "known_good_ranges": ["10.8.0.0/24"],
+  "scanner_ranges": [],
+  "baselines": {
+    "jsmith": {
+      "typical_sources": ["10.0.5.10"],
+      "typical_hosts": ["WS-JSMITH"],
+      "typical_file_servers": [],
+      "typical_outbound_bytes": 5000000
+    }
+  }
+}
