@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from false_alarm.domain.models import Assessment, Hypothesis
 from false_alarm.scenarios import Catalog
-from false_alarm.util import ip_in_ranges, is_external_ip
+from false_alarm.util import defang_citations, ip_in_ranges, is_external_ip
 
 _NEGATIVE = {"malicious", "suspicious", "negative"}
 _CLEAN = {"clean", "benign", "neutral", "known_good"}
@@ -247,7 +247,7 @@ def assess(
         missing.append(message)
         material.append(message)
     for item in unknown_ti:
-        indicator = item["raw"].get("indicator")
+        indicator = defang_citations(str(item["raw"].get("indicator")))
         message = f"Reputation for {indicator} is unknown, not benign."
         missing.append(message)
         material.append(message)

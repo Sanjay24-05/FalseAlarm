@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from false_alarm.util import defang_citations as plain
+
 SECTION_KEYS = (
     "incident_summary",
     "alert_details",
@@ -20,7 +22,7 @@ SECTION_KEYS = (
     "audit_trail",
 )
 
-EVIDENCE_ID_RE = re.compile(r"\bev-\d{4}\b")
+EVIDENCE_ID_RE = re.compile(r"\bev-\d{4,}\b")
 
 
 def unknown_citations(text: str, known: set[str]) -> set[str]:
@@ -79,7 +81,7 @@ def _correlated(evidence: list[dict]) -> str:
         for value, ids in sorted(values.items()):
             if len(ids) < 2:
                 continue
-            lines.append(f"{label} {value} links {', '.join(ids)}.")
+            lines.append(f"{label} {plain(value)} links {', '.join(ids)}.")
     return "\n".join(lines) if lines else "No shared indicators were found across stored evidence."
 
 
@@ -93,33 +95,34 @@ def compose_report(
     known = {item["id"] for item in evidence}
     cites = _cites(evidence) or "none"
     support_lines = [
-        f"{item['evidence_id']}: {item['statement']}" for item in assessment.get("supporting_evidence") or []
+        f"{item['evidence_id']}: {plain(item['statement'])}" for item in assessment.get("supporting_evidence") or []
     ]
     contradict_lines = [
-        f"{item['evidence_id']}: {item['statement']}" for item in assessment.get("contradicting_evidence") or []
+        f"{item['evidence_id']}: {plain(item['statement'])}" for item in assessment.get("contradicting_evidence") or []
     ]
-    evidence_lines = [f"{item['id']} ({item['source_type']}): {item['summary']}" for item in evidence]
+    evidence_lines = [f"{item['id']} ({item['source_type']}): {plain(item['summary'])}" for item in evidence]
     timeline_lines = [
-        f"{item['timestamp']} [{item['relationship']}] {item['summary']} ({', '.join(item['evidence_ids'])})"
+        f"{item['timestamp']} [{item['relationship']}] {plain(item['summary'])} ({', '.join(item['evidence_ids'])})"
         for item in timeline
     ]
     intel_lines = [
-        f"{item['id']}: {item['summary']}" for item in evidence if item["source_type"] == "threat_intel"
+        f"{item['id']}: {plain(item['summary'])}" for item in evidence if item["source_type"] == "threat_intel"
     ]
-    audit_lines = [f"{item['timestamp']} {item['kind']}: {item['summary']}" for item in audit]
+    audit_lines = [f"{item['timestamp']} {item['kind']}: {plain(item['summary'])}" for item in audit]
     gaps = assessment.get("missing_evidence") or []
     unresolved = assessment.get("unresolved_questions") or []
     actions = assessment.get("recommended_actions") or []
     candidate = {
         "incident_summary": (
-            f"Investigation of alert {alert['id']} ({alert['name']}) from {alert['source']} "
+            f"Investigation of alert {plain(alert['id'])} ({plain(alert['name'])}) from {plain(alert['source'])} "
             f"concluded {assessment['verdict']} with {assessment['confidence']} confidence "
             f"and severity {assessment['severity']}. Observations considered include {cites}."
         ),
         "alert_details": (
-            f"Source {alert['source']} reported {alert['name']} at {alert['detected_at']} "
-            f"for user {alert.get('username') or 'unspecified'} on host {alert.get('hostname') or 'unspecified'} "
-            f"from {alert.get('src_ip') or 'unspecified'}. {alert.get('description') or ''} "
+            f"Source {plain(alert['source'])} reported {plain(alert['name'])} at {alert['detected_at']} "
+            f"for user {plain(alert.get('username') or 'unspecified')} "
+            f"on host {plain(alert.get('hostname') or 'unspecified')} "
+            f"from {plain(alert.get('src_ip') or 'unspecified')}. {plain(alert.get('description') or '')} "
             f"Related observations include {cites}."
         ),
         "triage": (

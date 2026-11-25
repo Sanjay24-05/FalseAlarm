@@ -122,7 +122,7 @@ def test_unattributed_harm_still_blocks_benign(monkeypatch, tmp_path, record):
 MALWARE = {"action": "malware_detected", "severity": "critical", "timestamp": "2026-04-12T13:58:00Z"}
 
 
-@pytest.mark.parametrize("account", ["SYSTEM", "NT AUTHORITY\SYSTEM", "ws-bob$", "root", None])
+@pytest.mark.parametrize("account", ["SYSTEM", "NT AUTHORITY\\SYSTEM", "ws-bob$", "root", None])
 def test_machine_account_activity_on_the_alert_host_is_attributed(monkeypatch, tmp_path, account):
     result = _investigate(monkeypatch, tmp_path, endpoint=[{**MALWARE, "username": account, "hostname": "ws-bob"}])
     assert _verdict(result) == "confirmed_threat"
