@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 
 from false_alarm.util import unique_strings
 
@@ -131,22 +132,13 @@ def unknown_reputation_event(indicator: str, observed_at: str) -> dict:
 
 
 def event_fingerprint(source_type: str, event: dict) -> str:
-    parts = [
-        source_type,
-        event.get("timestamp"),
-        event.get("username"),
-        event.get("src_ip"),
-        event.get("dst_ip"),
-        event.get("action"),
-        event.get("hostname"),
-        event.get("dst_host"),
-        event.get("indicator"),
-        event.get("reputation"),
-        event.get("query_name"),
-        event.get("name"),
-        event.get("bytes"),
-    ]
-    return "|".join("" if part is None else str(part) for part in parts)
+    """Identify one record by all of its fields.
+
+    A reputation record is stamped with the lookup time, so its timestamp is not part of its identity.
+    """
+    ignored = {"scenario", "timestamp"} if source_type == "threat_intel" else {"scenario"}
+    fields = {key: value for key, value in event.items() if key not in ignored}
+    return f"{source_type}|{json.dumps(fields, sort_keys=True, default=str)}"
 
 
 def make_observation(source_type: str, event: dict, *, evidence_id: str, query_id: str, source: str) -> dict:

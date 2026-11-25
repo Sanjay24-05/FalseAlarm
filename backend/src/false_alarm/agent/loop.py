@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import timedelta
 from uuid import uuid4
@@ -118,8 +119,13 @@ def _enforce_arguments(action: ToolAction, state: RunState, limit: int) -> dict:
     return arguments
 
 
-def _remember(state: RunState, source_type: str, event: dict, query_id: str, source: str) -> dict | None:
-    key = event_fingerprint(source_type, event)
+def _remember(
+    state: RunState, source_type: str, event: dict, query_id: str, source: str, repeats: Counter[str]
+) -> dict | None:
+    """Store a record once across queries. Identical rows within one query result are separate records."""
+    fingerprint = event_fingerprint(source_type, event)
+    repeats[fingerprint] += 1
+    key = fingerprint if source_type == "threat_intel" else f"{fingerprint}#{repeats[fingerprint]}"
     if key in state.seen:
         return None
     state.seen.add(key)
@@ -371,8 +377,9 @@ def _execute(investigation_id: str) -> dict:
             query_id = f"qry-{state.query_seq:04d}"
             result = outcome["result"]
             source_name = result["source"]
+            repeats: Counter[str] = Counter()
             for event in outcome["events"]:
-                if _remember(state, outcome["source_type"], event, query_id, source_name) is not None:
+                if _remember(state, outcome["source_type"], event, query_id, source_name, repeats) is not None:
                     added += 1
             if outcome["source_type"] == "threat_intel":
                 found = {
@@ -384,7 +391,7 @@ def _execute(investigation_id: str) -> dict:
                     if str(indicator).casefold() in found:
                         continue
                     miss = unknown_reputation_event(str(indicator), result["timestamp"])
-                    if _remember(state, "threat_intel", miss, query_id, source_name) is not None:
+                    if _remember(state, "threat_intel", miss, query_id, source_name, repeats) is not None:
                         added += 1
                 if settings.external_ti_enabled:
                     _audit(
