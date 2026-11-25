@@ -94,7 +94,7 @@ Later-action signals are: access to a high or critical asset outside the user's 
 - `confirmed_threat` when at least one access-stage signal and at least one later-action signal are both present, and the benign case above does not apply. This always escalates.
 - `suspicious` otherwise. This escalates when a material gap remains, or when a source outside the baseline and known-good ranges succeeded after three or more failures from that same source.
 
-Material gaps are: no authentication events, threat intelligence not queried, a reputation stored as unknown, or harmful activity that could not be attributed to the sign-in. High confidence requires at least three evidence source types, no material gap, and a verdict of `confirmed_threat` or `likely_benign`.
+Material gaps are: no authentication events, threat intelligence not queried, a reputation stored as unknown, harmful activity that could not be attributed to the sign-in, or a query that reached its event limit. A query that reaches its limit keeps the newest events and rules out `likely_benign`. High confidence requires at least three evidence source types, no material gap, and a verdict of `confirmed_threat` or `likely_benign`.
 
 Assessed severity is independent of the alert's original severity. `likely_benign` is `low` when authentication evidence exists, otherwise `informational`. Both a sensitive-asset access and an unusual outbound transfer make it `critical`. Either of those, or malicious endpoint activity, or a confirmed threat, makes it `high`. A suspicious case with none of those is `medium`.
 

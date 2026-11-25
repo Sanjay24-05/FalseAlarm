@@ -42,6 +42,7 @@ class RunState:
     steps: list[dict] = field(default_factory=list)
     audit: list[dict] = field(default_factory=list)
     seen: set[str] = field(default_factory=set)
+    truncated: set[str] = field(default_factory=set)
     tool_calls: int = 0
     evidence_seq: int = 0
     query_seq: int = 0
@@ -195,6 +196,7 @@ def _finalize(state: RunState, status: str, stop_reason: str) -> dict:
         get_catalog(),
         _open_questions(state),
         answered_questions=set(state.context.answered),
+        truncated=sorted(state.truncated),
     )
     _audit(
         state,
@@ -377,6 +379,8 @@ def _execute(investigation_id: str) -> dict:
             query_id = f"qry-{state.query_seq:04d}"
             result = outcome["result"]
             source_name = result["source"]
+            if result["truncated"]:
+                state.truncated.add(outcome["source_type"])
             repeats: Counter[str] = Counter()
             for event in outcome["events"]:
                 if _remember(state, outcome["source_type"], event, query_id, source_name, repeats) is not None:

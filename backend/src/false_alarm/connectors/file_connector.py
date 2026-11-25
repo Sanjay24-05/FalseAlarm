@@ -247,7 +247,9 @@ class FileConnector:
         else:
             matched.sort(key=lambda event: (str(event.get("timestamp") or ""), str(event.get("username") or "")))
         truncated = len(matched) > effective
-        chosen = matched[:effective]
+        # Keep the newest events: the activity an alert is about comes after the routine activity.
+        keep_newest = truncated and self.source_type != "threat_intel"
+        chosen = matched[len(matched) - effective :] if keep_newest else matched[:effective]
         observed = utc_iso(utc_now())
         if self.source_type == "threat_intel":
             stamped = []

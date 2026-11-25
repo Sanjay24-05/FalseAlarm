@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from false_alarm.domain.models import Assessment, Hypothesis
 from false_alarm.scenarios import Catalog
 from false_alarm.util import defang_citations, ip_in_ranges, is_external_ip
@@ -46,6 +48,7 @@ def assess(
     unanswered: list[str],
     *,
     answered_questions: set[str],
+    truncated: Sequence[str] = (),
 ) -> tuple[dict, list[dict], dict]:
     username = alert.get("username")
     baseline = catalog.baseline_for(username)
@@ -194,7 +197,9 @@ def assess(
     post_auth_harm = bool(sensitive_hits or outbound_hits or endpoint_hits or related_hits)
     negative_reputation = bool(negative_ti)
     supported_benign = bool(successes) and not outside and len(outside_failures) < _REPEATED
-    strong_benign = supported_benign and not post_auth_harm and not set_aside and not negative_reputation
+    strong_benign = (
+        supported_benign and not post_auth_harm and not set_aside and not negative_reputation and not truncated
+    )
 
     access: list[str] = []
     if repeated_failures:
@@ -252,6 +257,10 @@ def assess(
         missing.append(message)
         material.append(message)
 
+    for source_type in truncated:
+        message = f"The {source_type} query reached its event limit; older matching records were not retrieved."
+        missing.append(message)
+        material.append(message)
     if set_aside:
         message = (
             f"Potentially harmful activity was not attributed to this sign-in ({', '.join(item['id'] for item in set_aside)}): "
