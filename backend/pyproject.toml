@@ -14,6 +14,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.2.0",
+    "ruff>=0.6.0",
 ]
 
 [project.scripts]
@@ -30,3 +31,12 @@ include = ["false_alarm*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B"]
+# FastAPI declares dependencies as argument defaults.
+ignore = ["B008"]
