@@ -15,7 +15,7 @@ from false_alarm.assessment.rules import assess
 from false_alarm.correlation.engine import build_timeline
 from false_alarm.db import get_alert_row, get_investigation, insert_investigation, update_investigation
 from false_alarm.domain.models import InvestigationDocument
-from false_alarm.errors import AlertNotFound, UnknownToolError
+from false_alarm.errors import AlertNotFound, UnknownToolError, UnscopedQueryError
 from false_alarm.planner.actions import ToolAction
 from false_alarm.planner.llm import bounded_summary, choose_action
 from false_alarm.planner.playbooks import QuestionTemplate, playbook_action, questions_for, select_playbook
@@ -356,6 +356,12 @@ def _execute(investigation_id: str) -> dict:
             state.tool_calls += 1
             _audit(state, "tool_call", f"Rejected unknown tool {exc.name}", {"tool": exc.name})
             return _snapshot(state, status="failed", stop_reason="unknown_tool")
+        except UnscopedQueryError as exc:
+            _record_step(state, action, arguments, "rejected", started_at)
+            state.tool_calls += 1
+            _audit(state, "tool_call", f"Rejected {exc.name} because it named no user, host, or indicator", {})
+            _snapshot(state, status="running", stop_reason=None)
+            continue
 
         state.tool_calls += 1
         _record_step(state, action, arguments, "completed", started_at)

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from false_alarm.agent.allowlist import ALLOWED_TOOLS
 from false_alarm.connectors.file_connector import FileConnector, QueryRequest
-from false_alarm.errors import UnknownToolError
+from false_alarm.errors import UnknownToolError, UnscopedQueryError
 
 _QUERY_TOOLS = {
     "query_authentication": ("authentication.json", "authentication"),
@@ -45,6 +45,8 @@ def execute_tool(
     iocs = arguments.get("iocs") or []
     if isinstance(iocs, str):
         iocs = [iocs]
+    if not (iocs or arguments.get("user") or arguments.get("host")):
+        raise UnscopedQueryError(name)
     request = QueryRequest(
         iocs=[str(item) for item in iocs if item],
         user=str(arguments["user"]) if arguments.get("user") else None,
