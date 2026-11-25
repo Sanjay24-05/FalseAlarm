@@ -16,6 +16,7 @@ _MALICIOUS_ACTIONS = {
     "suspicious_process",
 }
 _OUTBOUND_FLOOR = 50_000_000
+_REPEATED = 3
 
 
 def _user_matches(event: dict, username: str | None) -> bool:
@@ -47,36 +48,51 @@ def assess(
     failures = [item for item in auth if item["raw"].get("action") == "failure" and _user_matches(item, username)]
     successes = [item for item in auth if item["raw"].get("action") == "success" and _user_matches(item, username)]
     successes.sort(key=lambda item: item["observed_at"])
-    primary_success = successes[0] if successes else None
-
-    success_same = False
-    if primary_success is not None:
-        source_ip = primary_success["raw"].get("src_ip")
-        success_same = any(
-            item["raw"].get("src_ip") == source_ip and item["observed_at"] <= primary_success["observed_at"]
-            for item in failures
-        )
-    success_ip = None
-    if primary_success is not None:
-        success_ip = primary_success["raw"].get("src_ip")
-    elif alert.get("src_ip"):
-        success_ip = alert.get("src_ip")
 
     corporate = list(catalog.corporate_vpn_ranges) + list(catalog.scanner_ranges)
     known_good = list(catalog.known_good_ranges) + corporate
     typical_sources = list(baseline.get("typical_sources") or [])
-    known_corporate = ip_in_ranges(success_ip, corporate) if primary_success is not None else False
-    baseline_source = ip_in_ranges(success_ip, typical_sources) if primary_success is not None else False
-    new_source = bool(primary_success and success_ip) and not baseline_source and not ip_in_ranges(success_ip, known_good)
+    supported_ranges = corporate + typical_sources
 
-    account_ip = success_ip or alert.get("src_ip")
-    accounts = {
-        (item["raw"].get("username") or "").casefold()
-        for item in auth
-        if item["raw"].get("src_ip") == account_ip and item["raw"].get("username")
-    }
-    repeated_failures = len(failures) >= 3
-    many_accounts = len(accounts) >= 3
+    def supported(item: dict) -> bool:
+        return ip_in_ranges(item["raw"].get("src_ip"), supported_ranges)
+
+    def prior_failures(success: dict) -> list[dict]:
+        source_ip = success["raw"].get("src_ip")
+        return [
+            item
+            for item in failures
+            if source_ip and item["raw"].get("src_ip") == source_ip and item["observed_at"] <= success["observed_at"]
+        ]
+
+    outside = [item for item in successes if not supported(item)]
+    outside_failures = [item for item in failures if not supported(item)]
+    new_source_successes = [
+        item
+        for item in outside
+        if item["raw"].get("src_ip") and not ip_in_ranges(item["raw"].get("src_ip"), known_good)
+    ]
+    guessed = [item for item in successes if prior_failures(item)]
+    compromised = [item for item in new_source_successes if len(prior_failures(item)) >= _REPEATED]
+    # The login the case rests on: the most suspicious one, not the first one.
+    primary_success = next(iter(compromised or new_source_successes or outside or guessed or successes), None)
+    success_same = bool(guessed)
+    new_source = bool(new_source_successes)
+
+    account_ips = {item["raw"].get("src_ip") for item in successes} | {alert.get("src_ip")}
+    repeated_failures = len(failures) >= _REPEATED
+    many_accounts = any(
+        len(
+            {
+                (item["raw"].get("username") or "").casefold()
+                for item in auth
+                if item["raw"].get("src_ip") == account_ip and item["raw"].get("username")
+            }
+        )
+        >= _REPEATED
+        for account_ip in account_ips
+        if account_ip
+    )
 
     servers = {str(item) for item in (baseline.get("typical_file_servers") or [])}
     sensitive_hits: list[tuple[dict, dict]] = []
@@ -128,7 +144,7 @@ def assess(
 
     post_auth_harm = bool(sensitive_hits or outbound_hits or endpoint_hits or related_hits)
     negative_reputation = bool(negative_ti)
-    supported_benign = primary_success is not None and (known_corporate or baseline_source)
+    supported_benign = bool(successes) and not outside and len(outside_failures) < _REPEATED
     strong_benign = supported_benign and not post_auth_harm and not negative_reputation
 
     access: list[str] = []
@@ -214,6 +230,12 @@ def assess(
             "Escalated because the verdict is confirmed_threat: independent access-stage and "
             "later-action signals were observed without a strong benign explanation."
         )
+    elif compromised:
+        escalate = True
+        escalation_reason = (
+            "Escalated because a sign-in from a source outside the user's baseline succeeded after repeated "
+            "failures from that source."
+        )
     elif material and (verdict == "suspicious" or high_impact):
         escalate = True
         escalation_reason = (
@@ -233,11 +255,14 @@ def assess(
     contradicting: list[dict[str, str]] = []
     if verdict == "confirmed_threat":
         if failures:
-            supporting.append(_statement(failures[0], "Counted as an access-stage signal because authentication failed repeatedly."))
+            supporting.append(_statement(failures[0], f"Counted as an access-stage signal: {len(failures)} failed sign-in(s)."))
         if primary_success is not None:
-            supporting.append(
-                _statement(primary_success, "Counted as an access-stage signal because the success used the same source as the failures.")
+            reason = (
+                "the success used the same source as the failures"
+                if prior_failures(primary_success)
+                else "the success is the login the later activity followed"
             )
+            supporting.append(_statement(primary_success, f"Counted as an access-stage signal because {reason}."))
         for item, asset in sensitive_hits:
             supporting.append(
                 _statement(item, f"Counted as later action because {asset.get('hostname')} is a sensitive asset outside this user's baseline.")

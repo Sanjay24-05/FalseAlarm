@@ -86,13 +86,13 @@ Load either one with the queue buttons or with `POST /api/scenarios/{id}/load`, 
 
 Verdicts are labels. Confidence is `low`, `medium`, or `high`, not a probability. A missing reputation is unknown, not benign.
 
-Access-stage signals are: three or more authentication failures for the user, a success from the same source as those failures, a success from a source that is neither the user baseline nor a known-good range, or three or more accounts from one IP.
+Every successful sign-in in the window is judged, not only the first. Access-stage signals are: three or more authentication failures for the user, a success from the same source as an earlier failure, a success from a source that is neither the user baseline nor a known-good range, or three or more accounts from one IP.
 
 Later-action signals are: access to a high or critical asset outside the user's typical file servers, an unusual outbound transfer, endpoint activity marked malicious or high/critical, or a related alert of medium severity or higher. An outbound transfer counts when its destination has a negative local reputation, or when the byte count reaches the greater of 50,000,000 and five times that user's typical outbound volume.
 
-- `likely_benign` when a successful authentication comes from a corporate VPN range, a scanner range, or a baseline source, and there is no later-action signal and no negative reputation. This does not escalate.
+- `likely_benign` when every successful authentication comes from a corporate VPN range, a scanner range, or a baseline source, there are fewer than three failures from any other source, and there is no later-action signal and no negative reputation. This does not escalate.
 - `confirmed_threat` when at least one access-stage signal and at least one later-action signal are both present, and the benign case above does not apply. This always escalates.
-- `suspicious` otherwise. This escalates when a material gap remains and the case is suspicious or the assessed severity is high or critical.
+- `suspicious` otherwise. This escalates when a material gap remains, or when a source outside the baseline and known-good ranges succeeded after three or more failures from that same source.
 
 Material gaps are: no authentication events, threat intelligence not queried, or a reputation stored as unknown. High confidence requires at least three evidence source types, no material gap, and a verdict of `confirmed_threat` or `likely_benign`.
 
