@@ -26,7 +26,10 @@ def parse_datetime(value: str) -> datetime:
     parsed = datetime.fromisoformat(text)
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+    try:
+        return parsed.astimezone(timezone.utc)
+    except OverflowError as exc:
+        raise ValueError("timestamp is out of range") from exc
 
 
 def minute_bucket(value: datetime) -> str:

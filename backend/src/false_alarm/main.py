@@ -5,8 +5,10 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from false_alarm.api.routes import router
 from false_alarm.db import init_db
@@ -18,6 +20,15 @@ async def _lifespan(_app: FastAPI):
     yield
 
 
+async def _validation_errors(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Report framework validation in the same shape as alert validation."""
+    errors = [
+        {"field": ".".join(str(part) for part in item["loc"] if part != "body") or "body", "message": item["msg"]}
+        for item in exc.errors()
+    ]
+    return JSONResponse(status_code=422, content={"errors": errors})
+
+
 def create_app() -> FastAPI:
     application = FastAPI(title="False Alarm", lifespan=_lifespan)
     application.add_middleware(
@@ -27,6 +38,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    application.add_exception_handler(RequestValidationError, _validation_errors)
     application.include_router(router, prefix="/api")
     return application
 

@@ -39,7 +39,7 @@ async def create_alert(request: Request) -> JSONResponse:
         )
     try:
         payload = json.loads(raw)
-    except json.JSONDecodeError:
+    except (ValueError, RecursionError):
         return JSONResponse(
             status_code=422,
             content={"errors": [{"field": "body", "message": "Request body is not valid JSON"}]},
@@ -65,7 +65,7 @@ async def upload_alerts(file: UploadFile = File(...)) -> JSONResponse:
         )
     try:
         data = json.loads(raw.decode("utf-8-sig"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
+    except (ValueError, RecursionError):
         return JSONResponse(
             status_code=422,
             content={"errors": [{"field": "file", "message": "Upload is not valid JSON"}]},

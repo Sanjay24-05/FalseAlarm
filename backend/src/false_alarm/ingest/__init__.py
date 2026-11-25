@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import re
+import sqlite3
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
@@ -15,7 +17,9 @@ from false_alarm.util import minute_bucket, parse_datetime, utc_iso
 
 SEVERITIES = {"informational", "low", "medium", "high", "critical"}
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
-_OPTIONAL_STRINGS = ("description", "src_ip", "dst_ip", "username", "hostname")
+_MAX_DEPTH = 64
+# Room on both sides for the investigation window and its expansions.
+_YEARS = range(1970, 3000)
 
 
 @dataclass
@@ -111,6 +115,28 @@ def _string_list(
     return items
 
 
+def _unstorable(payload: dict[str, Any]) -> str | None:
+    """Why this JSON value cannot be stored and served back, or None. Walks without recursion."""
+    pending: list[tuple[Any, int]] = [(payload, 0)]
+    while pending:
+        value, depth = pending.pop()
+        if depth > _MAX_DEPTH:
+            return f"Alert payload is nested more than {_MAX_DEPTH} levels deep"
+        if isinstance(value, str):
+            try:
+                value.encode("utf-8")
+            except UnicodeEncodeError:
+                return "Alert payload contains text that is not valid Unicode"
+        elif isinstance(value, float):
+            if not math.isfinite(value):
+                return "Alert payload contains a number that is not finite"
+        elif isinstance(value, dict):
+            pending.extend((item, depth + 1) for pair in value.items() for item in pair)
+        elif isinstance(value, list):
+            pending.extend((item, depth + 1) for item in value)
+    return None
+
+
 def primary_entity(alert: dict[str, Any]) -> str:
     for key in ("username", "hostname", "src_ip", "dst_ip"):
         value = alert.get(key)
@@ -132,11 +158,25 @@ def fingerprint_for(alert: dict[str, Any]) -> str:
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
+def _stored_duplicate(fingerprint: str) -> IngestResult | None:
+    existing = get_alert_row_by_fingerprint(fingerprint)
+    if existing is None:
+        return None
+    return IngestResult(alert=existing["alert"], warnings=existing.get("warnings") or [], duplicate=True)
+
+
+def _id_taken(warnings: list[dict[str, str]]) -> IngestResult:
+    return IngestResult(errors=[{"field": "id", "message": "Alert id already exists"}], warnings=warnings)
+
+
 def ingest_alert(payload: Any) -> IngestResult:
     if not isinstance(payload, dict):
         return IngestResult(
             errors=[{"field": "body", "message": "Alert payload must be a JSON object"}]
         )
+    problem = _unstorable(payload)
+    if problem:
+        return IngestResult(errors=[{"field": "body", "message": problem}])
     errors: list[dict[str, str]] = []
     warnings: list[dict[str, str]] = []
 
@@ -150,7 +190,11 @@ def ingest_alert(payload: Any) -> IngestResult:
         _error(errors, "detected_at", "detected_at must be an ISO8601 string")
     else:
         try:
-            detected_at = utc_iso(parse_datetime(detected_raw))
+            detected = parse_datetime(detected_raw)
+            if detected.year in _YEARS:
+                detected_at = utc_iso(detected)
+            else:
+                _error(errors, "detected_at", f"detected_at must be between {_YEARS[0]} and {_YEARS[-1]}")
         except ValueError:
             _error(errors, "detected_at", "detected_at is not a valid ISO8601 timestamp")
 
@@ -227,20 +271,13 @@ def ingest_alert(payload: Any) -> IngestResult:
         _warn(warnings, "iocs", "No indicators were extracted from this alert")
 
     fingerprint = fingerprint_for(normalized)
-    existing = get_alert_row_by_fingerprint(fingerprint)
-    if existing is not None:
-        return IngestResult(
-            alert=existing["alert"],
-            warnings=existing.get("warnings") or [],
-            duplicate=True,
-        )
+    duplicate = _stored_duplicate(fingerprint)
+    if duplicate is not None:
+        return duplicate
     if alert_id is None:
         alert_id = f"alrt-{uuid4().hex[:12]}"
     elif alert_id_exists(alert_id):
-        return IngestResult(
-            errors=[{"field": "id", "message": "Alert id already exists"}],
-            warnings=warnings,
-        )
+        return _id_taken(warnings)
 
     alert = {
         "id": alert_id,
@@ -249,5 +286,10 @@ def ingest_alert(payload: Any) -> IngestResult:
     }
     Alert.model_validate(alert)
     document = {"alert": alert, "warnings": warnings}
-    save_alert(alert_id, fingerprint, document)
+    try:
+        save_alert(alert_id, fingerprint, document)
+    except sqlite3.IntegrityError:
+        # Another request stored the same fingerprint or id after the checks above.
+        duplicate = _stored_duplicate(fingerprint)
+        return duplicate if duplicate is not None else _id_taken(warnings)
     return IngestResult(alert=alert, warnings=warnings, duplicate=False)
