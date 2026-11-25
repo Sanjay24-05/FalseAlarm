@@ -217,8 +217,9 @@ def build_arguments(
             args["iocs"] = sorted(context.hashes)
         if question.tool == "query_dns" and context.domains:
             args["iocs"] = sorted(context.domains)
-        if not any(args.get(key) for key in ("user", "host", "iocs")) and context.src_ip:
-            args["iocs"] = [context.src_ip]
+        # Without a host, records that carry only an address are reachable only through the source IP.
+        if not context.hostname and context.src_ip:
+            args["iocs"] = unique_strings([*args.get("iocs", []), context.src_ip])
         return args
     if question.tool == "expand_time_window":
         return {"start": args["start"], "end": args["end"]}

@@ -15,6 +15,8 @@ _MALICIOUS_ACTIONS = {
     "malware_detected",
     "suspicious_process",
 }
+_BLOCKED_ACTIONS = {"deny", "denied", "block", "blocked", "drop", "dropped", "reject", "rejected", "reset"}
+_MACHINE_ACCOUNTS = {"system", "local service", "network service", "localsystem", "root"}
 _OUTBOUND_FLOOR = 50_000_000
 _REPEATED = 3
 
@@ -23,6 +25,14 @@ def _user_matches(event: dict, username: str | None) -> bool:
     if not username:
         return True
     return (event["raw"].get("username") or "").casefold() == username.casefold()
+
+
+def _fold(value: object) -> str:
+    return value.strip().casefold() if isinstance(value, str) else ""
+
+
+def _is_machine_account(username: str) -> bool:
+    return username.endswith("$") or username.rsplit("\\", 1)[-1] in _MACHINE_ACCOUNTS
 
 
 def _statement(event: dict, clause: str) -> dict[str, str]:
@@ -94,6 +104,39 @@ def assess(
         if account_ip
     )
 
+    anchor = min((item["observed_at"] for item in (outside or successes or failures)), default="")
+    subject_ips = {item["raw"].get("src_ip") for item in successes} | {alert.get("src_ip")}
+    if username:
+        subject_users = {_fold(username)}
+    else:
+        subject_users = {
+            _fold(item["raw"].get("username")) for item in successes if item["raw"].get("src_ip") == alert.get("src_ip")
+        }
+    subject_users.discard("")
+
+    def attributed(item: dict) -> bool:
+        """The record belongs to the alert's user, or names no person and belongs to its host or source."""
+        user = _fold(item["raw"].get("username"))
+        if user in subject_users:
+            return True
+        if user and subject_users and not _is_machine_account(user):
+            return False
+        host = _fold(item["raw"].get("hostname"))
+        if host and host == _fold(alert.get("hostname")):
+            return True
+        source_ip = item["raw"].get("src_ip")
+        return bool(source_ip and source_ip in subject_ips)
+
+    set_aside: list[dict] = []
+
+    def counts(item: dict) -> bool:
+        blocked = item["source_type"] == "firewall" and _fold(item["raw"].get("action")) in _BLOCKED_ACTIONS
+        if attributed(item) and item["observed_at"] >= anchor and not blocked:
+            return True
+        if item not in set_aside:
+            set_aside.append(item)
+        return False
+
     servers = {str(item) for item in (baseline.get("typical_file_servers") or [])}
     sensitive_hits: list[tuple[dict, dict]] = []
     baseline_assets: list[tuple[dict, dict]] = []
@@ -103,7 +146,8 @@ def assess(
             continue
         expected = asset.get("hostname") in servers or asset.get("ip") in servers
         if asset.get("sensitivity") in {"high", "critical"} and not expected:
-            sensitive_hits.append((item, asset))
+            if counts(item):
+                sensitive_hits.append((item, asset))
         elif expected:
             baseline_assets.append((item, asset))
 
@@ -129,23 +173,28 @@ def assess(
         is_outbound = direction == "outbound" or (public and direction != "internal")
         nbytes = int(item["raw"].get("bytes") or 0)
         destination_negative = bool(destination and destination.casefold() in negative_indicators)
-        if is_outbound and (nbytes >= threshold or destination_negative):
+        if is_outbound and (nbytes >= threshold or destination_negative) and counts(item):
             outbound_hits.append(item)
 
     endpoint_hits = [
         item
         for item in endpoint
-        if (item["raw"].get("action") or "") in _MALICIOUS_ACTIONS
-        or (item["raw"].get("severity") or "") in {"high", "critical"}
+        if (
+            (item["raw"].get("action") or "") in _MALICIOUS_ACTIONS
+            or (item["raw"].get("severity") or "") in {"high", "critical"}
+        )
+        and counts(item)
     ]
     related_hits = [
-        item for item in related if (item["raw"].get("severity") or "") in {"medium", "high", "critical"}
+        item
+        for item in related
+        if (item["raw"].get("severity") or "") in {"medium", "high", "critical"} and counts(item)
     ]
 
     post_auth_harm = bool(sensitive_hits or outbound_hits or endpoint_hits or related_hits)
     negative_reputation = bool(negative_ti)
     supported_benign = bool(successes) and not outside and len(outside_failures) < _REPEATED
-    strong_benign = supported_benign and not post_auth_harm and not negative_reputation
+    strong_benign = supported_benign and not post_auth_harm and not set_aside and not negative_reputation
 
     access: list[str] = []
     if repeated_failures:
@@ -200,6 +249,14 @@ def assess(
     for item in unknown_ti:
         indicator = item["raw"].get("indicator")
         message = f"Reputation for {indicator} is unknown, not benign."
+        missing.append(message)
+        material.append(message)
+
+    if set_aside:
+        message = (
+            f"Potentially harmful activity was not attributed to this sign-in ({', '.join(item['id'] for item in set_aside)}): "
+            "it belongs to another account, precedes the access, or was blocked."
+        )
         missing.append(message)
         material.append(message)
 
