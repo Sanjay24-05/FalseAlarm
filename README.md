@@ -139,6 +139,8 @@ Set `FALSE_ALARM_API_TOKEN` to also require `Authorization: Bearer <token>` on e
 
 ## HTTP contract
 
+Every route declares a response model in `backend/src/false_alarm/api/schemas.py`, and the console's types in `frontend/src/generated/api.ts` are generated from them. After changing a model, run `python backend/scripts/generate_types.py` from the repository root; a backend test fails while the generated file is stale.
+
 `POST /api/alerts` accepts one JSON object. A new alert is `201`. The same fingerprint is `200` with `duplicate: true`. Validation failure is `422` and the body is `{ "errors": [{ "field": "...", "message": "..." }] }` with no `detail` wrapper. `404` responses use `{ "detail": "..." }`.
 
 `POST /api/alerts/upload` reads a multipart field named `file`. The file is one JSON object or an array. The response is `200` and `{ "results": [ ... ] }`. A bad item is `{ "errors": [...] }` and does not fail the rest of the batch. An empty or non-JSON file is `422`.

@@ -1,3 +1,4 @@
+import type * as Api from "./generated/api";
 import type {
   AlertDetail,
   AlertListItem,
@@ -8,18 +9,7 @@ import type {
   Scenario,
   UploadResult,
 } from "./types";
-import {
-  normalizeAlertDetail,
-  normalizeAlertListItem,
-  normalizeFieldMessages,
-  normalizeIngest,
-  normalizeInvestigation,
-  normalizeInvestigationSummary,
-  normalizeScenario,
-  normalizeUploadResult,
-  requireRecord,
-  uniqueFieldErrors,
-} from "./lib/normalize";
+import { requireRecord, uniqueFieldErrors } from "./lib/normalize";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -105,79 +95,75 @@ async function request(path: string, init?: RequestInit): Promise<unknown> {
   return data;
 }
 
+/** The response body as the generated type, after checking it is an object with the given array or id. */
+function shaped<T>(value: unknown, label: string, check: (record: Record<string, unknown>) => boolean): T {
+  const record = requireRecord(value, label);
+  if (!check(record)) throw new Error(`Unexpected response from ${label}.`);
+  return record as T;
+}
+
+const hasArray = (key: string) => (record: Record<string, unknown>) => Array.isArray(record[key]);
+const hasId = (record: Record<string, unknown>) => typeof record.id === "string" && record.id !== "";
+const hasAlert = (record: Record<string, unknown>) =>
+  !!record.alert && typeof record.alert === "object" && hasId(record.alert as Record<string, unknown>);
+
 export async function listAlerts(): Promise<AlertListItem[]> {
-  const data = requireRecord(await request("/api/alerts"), "GET /api/alerts");
-  if (!Array.isArray(data.alerts)) throw new Error("Unexpected response from GET /api/alerts.");
-  return data.alerts.map(normalizeAlertListItem);
+  return shaped<Api.AlertList>(await request("/api/alerts"), "GET /api/alerts", hasArray("alerts")).alerts;
 }
 
 export async function getAlert(id: string): Promise<{ alert: AlertDetail; warnings: FieldError[] }> {
-  const data = requireRecord(await request(`/api/alerts/${encodeURIComponent(id)}`), "GET /api/alerts/{id}");
-  const alert = normalizeAlertDetail(data.alert);
-  const warnings = uniqueFieldErrors([...normalizeFieldMessages(data.warnings), ...alert.warnings]);
-  return { alert: { ...alert, warnings }, warnings };
+  const label = "GET /api/alerts/{id}";
+  const data = shaped<Api.AlertView>(await request(`/api/alerts/${encodeURIComponent(id)}`), label, hasAlert);
+  const warnings = uniqueFieldErrors(data.warnings ?? []);
+  return { alert: { ...data.alert, warnings }, warnings };
 }
 
 export async function listAlertInvestigations(id: string): Promise<InvestigationSummary[]> {
-  const data = requireRecord(
-    await request(`/api/alerts/${encodeURIComponent(id)}/investigations`),
-    "GET /api/alerts/{id}/investigations",
-  );
-  if (!Array.isArray(data.investigations)) {
-    throw new Error("Unexpected response from GET /api/alerts/{id}/investigations.");
-  }
-  return data.investigations.map(normalizeInvestigationSummary);
+  const label = "GET /api/alerts/{id}/investigations";
+  const path = `/api/alerts/${encodeURIComponent(id)}/investigations`;
+  return shaped<Api.InvestigationList>(await request(path), label, hasArray("investigations")).investigations;
+}
+
+function ingested(value: unknown, label: string): IngestResult {
+  const data = shaped<Api.IngestResponse>(value, label, hasAlert);
+  return { ...data, warnings: uniqueFieldErrors(data.warnings ?? []), duplicate: data.duplicate === true };
 }
 
 export async function createAlert(body: unknown): Promise<IngestResult> {
-  return normalizeIngest(
-    await request("/api/alerts", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-  );
+  return ingested(await request("/api/alerts", { method: "POST", body: JSON.stringify(body) }), "POST /api/alerts");
 }
 
 export async function uploadAlerts(file: File): Promise<UploadResult[]> {
   const form = new FormData();
   form.append("file", file);
-  const data = requireRecord(await request("/api/alerts/upload", { method: "POST", body: form }), "POST /api/alerts/upload");
-  if (!Array.isArray(data.results)) throw new Error("Unexpected response from POST /api/alerts/upload.");
-  return data.results.map(normalizeUploadResult);
+  const label = "POST /api/alerts/upload";
+  const data = shaped<Api.UploadResponse>(
+    await request("/api/alerts/upload", { method: "POST", body: form }),
+    label,
+    hasArray("results"),
+  );
+  return data.results.map((item) =>
+    "alert" in item
+      ? { alert: item.alert, warnings: item.warnings, duplicate: item.duplicate, errors: [] }
+      : { alert: null, warnings: [], duplicate: false, errors: item.errors },
+  );
 }
 
 export async function listScenarios(): Promise<Scenario[]> {
-  const data = requireRecord(await request("/api/scenarios"), "GET /api/scenarios");
-  if (!Array.isArray(data.scenarios)) throw new Error("Unexpected response from GET /api/scenarios.");
-  return data.scenarios.flatMap((item) => {
-    const scenario = normalizeScenario(item);
-    return scenario ? [scenario] : [];
-  });
+  return shaped<Api.ScenarioList>(await request("/api/scenarios"), "GET /api/scenarios", hasArray("scenarios")).scenarios;
 }
 
 export async function loadScenario(id: string): Promise<IngestResult> {
-  return normalizeIngest(
-    await request(`/api/scenarios/${encodeURIComponent(id)}/load`, {
-      method: "POST",
-    }),
-  );
+  const path = `/api/scenarios/${encodeURIComponent(id)}/load`;
+  return ingested(await request(path, { method: "POST" }), "POST /api/scenarios/{id}/load");
 }
 
-export async function startInvestigation(alertId: string): Promise<{ id: string; status: string }> {
-  const data = requireRecord(
-    await request("/api/investigations", {
-      method: "POST",
-      body: JSON.stringify({ alert_id: alertId }),
-    }),
-    "POST /api/investigations",
-  );
-  const id = typeof data.id === "string" ? data.id : "";
-  if (!id) throw new Error("Investigation response is missing id.");
-  return { id, status: typeof data.status === "string" ? data.status : "" };
+export async function startInvestigation(alertId: string): Promise<Api.InvestigationStarted> {
+  const value = await request("/api/investigations", { method: "POST", body: JSON.stringify({ alert_id: alertId }) });
+  return shaped<Api.InvestigationStarted>(value, "POST /api/investigations", hasId);
 }
 
 export async function getInvestigation(id: string, signal?: AbortSignal): Promise<Investigation> {
-  return normalizeInvestigation(
-    await request(`/api/investigations/${encodeURIComponent(id)}`, { signal }),
-  );
+  const value = await request(`/api/investigations/${encodeURIComponent(id)}`, { signal });
+  return shaped<Investigation>(value, "GET /api/investigations/{id}", hasId);
 }

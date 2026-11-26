@@ -9,6 +9,17 @@ from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict
 
+from false_alarm.api.schemas import (
+    AlertList,
+    AlertView,
+    FieldErrors,
+    IngestResponse,
+    InvestigationList,
+    InvestigationStarted,
+    ScenarioList,
+    UploadResponse,
+)
+from false_alarm.domain.models import InvestigationDocument
 from false_alarm.errors import AlertNotFound, ScenarioNotFound
 from false_alarm.service import (
     alert_investigations,
@@ -31,7 +42,10 @@ class InvestigateRequest(BaseModel):
     alert_id: str
 
 
-@router.post("/alerts")
+_INGEST = {200: {"model": IngestResponse}, 201: {"model": IngestResponse}, 422: {"model": FieldErrors}}
+
+
+@router.post("/alerts", response_model=IngestResponse, status_code=201, responses=_INGEST)
 async def create_alert(request: Request) -> JSONResponse:
     raw = await request.body()
     if not raw or not raw.strip():
@@ -58,7 +72,7 @@ async def create_alert(request: Request) -> JSONResponse:
     return JSONResponse(status_code=result.status_code, content=result.public())
 
 
-@router.post("/alerts/upload")
+@router.post("/alerts/upload", response_model=UploadResponse, responses={422: {"model": FieldErrors}})
 async def upload_alerts(file: UploadFile = File(...)) -> JSONResponse:
     raw = await file.read()
     if not raw or not raw.strip():
@@ -106,12 +120,12 @@ def _ingest_batch(items: list) -> list[dict]:
     return results
 
 
-@router.get("/alerts")
+@router.get("/alerts", response_model=AlertList)
 def get_alerts() -> dict:
     return {"alerts": list_alert_summaries()}
 
 
-@router.get("/alerts/{alert_id}")
+@router.get("/alerts/{alert_id}", response_model=AlertView)
 def get_alert(alert_id: str) -> dict:
     view = get_alert_view(alert_id)
     if view is None:
@@ -119,7 +133,7 @@ def get_alert(alert_id: str) -> dict:
     return view
 
 
-@router.get("/alerts/{alert_id}/investigations")
+@router.get("/alerts/{alert_id}/investigations", response_model=InvestigationList)
 def get_alert_investigations(alert_id: str) -> dict:
     investigations = alert_investigations(alert_id)
     if investigations is None:
@@ -127,12 +141,12 @@ def get_alert_investigations(alert_id: str) -> dict:
     return {"investigations": investigations}
 
 
-@router.get("/scenarios")
+@router.get("/scenarios", response_model=ScenarioList)
 def get_scenarios() -> dict:
     return {"scenarios": list_scenarios()}
 
 
-@router.post("/scenarios/{scenario_id}/load")
+@router.post("/scenarios/{scenario_id}/load", response_model=IngestResponse, status_code=201, responses=_INGEST)
 def post_scenario(scenario_id: str) -> JSONResponse:
     try:
         result = load_scenario(scenario_id)
@@ -143,7 +157,7 @@ def post_scenario(scenario_id: str) -> JSONResponse:
     return JSONResponse(status_code=result.status_code, content=result.public())
 
 
-@router.post("/investigations")
+@router.post("/investigations", response_model=InvestigationStarted, status_code=202)
 def post_investigation(body: InvestigateRequest, background: BackgroundTasks) -> JSONResponse:
     try:
         started = start_investigation(body.alert_id)
@@ -154,7 +168,7 @@ def post_investigation(body: InvestigateRequest, background: BackgroundTasks) ->
     return JSONResponse(status_code=202, content={"id": started["id"], "status": "running"})
 
 
-@router.get("/investigations/{investigation_id}")
+@router.get("/investigations/{investigation_id}", response_model=InvestigationDocument)
 def get_investigation_view(investigation_id: str) -> dict:
     document = get_investigation(investigation_id)
     if document is None:

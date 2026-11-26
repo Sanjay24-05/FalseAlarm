@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, createAlert, getInvestigation, listAlerts } from "./api";
+import { ApiError, createAlert, getInvestigation, listAlerts, uploadAlerts } from "./api";
 
 function respond(status: number, body: unknown) {
   const text = typeof body === "string" ? body : JSON.stringify(body);
@@ -63,6 +63,24 @@ describe("requests", () => {
     const [path, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
     expect(path).toBe("/api/investigations/inv%2F1");
     expect(init.signal).toBe(controller.signal);
+  });
+
+  it("splits upload results into ingested alerts and rejected items", async () => {
+    const alert = { id: "a1", name: "ok" };
+    vi.stubGlobal(
+      "fetch",
+      respond(200, {
+        results: [
+          { alert, warnings: [{ field: "username", message: "username was not provided" }], duplicate: true },
+          { errors: [{ field: "name", message: "name is required" }] },
+        ],
+      }),
+    );
+    const results = await uploadAlerts(new File(["[]"], "a.json"));
+    expect(results).toEqual([
+      { alert, warnings: [{ field: "username", message: "username was not provided" }], duplicate: true, errors: [] },
+      { alert: null, warnings: [], duplicate: false, errors: [{ field: "name", message: "name is required" }] },
+    ]);
   });
 
   it("rejects a response with the wrong shape", async () => {

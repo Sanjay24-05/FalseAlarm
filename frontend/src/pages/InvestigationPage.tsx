@@ -73,7 +73,7 @@ function StepList({ steps }: { steps: InvestigationStep[] }) {
   return (
     <ol className="space-y-3">
       {steps.map((step, index) => (
-        <li key={step.id || index} className={cx("border bg-panel px-3 py-2", step.status === "running" ? "border-accent" : "border-line")}>
+        <li key={step.id || index} className="border border-line bg-panel px-3 py-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-mono text-[10px] text-faint">{String(index + 1).padStart(2, "0")}</span>
             <StatusBadge status={step.status || "queued"} />

@@ -184,24 +184,20 @@ export function AlertDetailPage() {
       {startError ? <ErrorBanner message={startError} /> : null}
       {ingest.duplicate ? (
         <div className="border border-warn/40 bg-warn/10 px-3 py-2 text-[12px] leading-relaxed text-text">
-          Duplicate alert. An existing record with the same fingerprint was returned
-          {alert.fingerprint ? ` (${alert.fingerprint}).` : "."}
+          Duplicate alert. An existing record with the same source, rule, entity, and detection minute was returned.
         </div>
       ) : null}
 
       <FieldGrid
         items={[
           { label: "id", value: display(alert.id) },
-          ...(alert.external_id ? [{ label: "external_id", value: display(alert.external_id) }] : []),
           { label: "source", value: display(alert.source) },
           { label: "severity", value: <SeverityBadge severity={alert.severity} /> },
           { label: "detected_at", value: formatTimestamp(alert.detected_at) },
-          ...(alert.created_at ? [{ label: "created_at", value: formatTimestamp(alert.created_at) }] : []),
           { label: "username", value: display(alert.username) },
           { label: "hostname", value: display(alert.hostname) },
           { label: "src_ip", value: display(alert.src_ip) },
           { label: "dst_ip", value: display(alert.dst_ip) },
-          ...(alert.fingerprint ? [{ label: "fingerprint", value: display(alert.fingerprint) }] : []),
         ]}
       />
 
