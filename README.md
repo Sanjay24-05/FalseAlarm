@@ -32,7 +32,7 @@ Assessment rules assign the verdict, a qualitative confidence label, and whether
 
 Evidence `source` identifies the connector, for example `file:authentication`. `source_type` is the log family: `authentication`, `firewall`, `endpoint`, `dns`, `related_alerts`, or `threat_intel`.
 
-A run stops for one of these reasons: `completed`, `tool_call_budget`, `time_budget`, `failed`, or `unknown_tool`. Tool-call and time budgets finish with investigation status `budget_exhausted`. The defaults are 12 tool calls and 60 seconds. Each step is `completed`, `rejected`, or `failed`.
+A run stops for one of these reasons: `completed`, `tool_call_budget`, `time_budget`, `failed`, `unknown_tool`, or `interrupted`. When the API starts, any run a previous process left `running` is marked `failed` with `interrupted`, so run one API process per database. An alert has at most one running investigation: starting another returns the running one's id. Tool-call and time budgets finish with investigation status `budget_exhausted`. The defaults are 12 tool calls and 60 seconds. Each step is `completed`, `rejected`, or `failed`.
 
 The report has these sections: incident summary, alert details, triage, executive explanation, timeline, evidence, correlated indicators, threat intelligence, attack sequence, confidence and gaps, recommended actions, escalation, and audit trail. A section is text. The console also renders a section when its value is structured JSON.
 

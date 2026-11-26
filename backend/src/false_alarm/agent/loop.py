@@ -15,7 +15,13 @@ from false_alarm.agent.observe import event_fingerprint, make_observation, unkno
 from false_alarm.agent.tools import execute_tool
 from false_alarm.assessment.rules import assess
 from false_alarm.correlation.engine import build_timeline
-from false_alarm.db import get_alert_row, get_investigation, insert_investigation, update_investigation
+from false_alarm.db import (
+    get_alert_row,
+    get_investigation,
+    insert_investigation,
+    running_investigation_ids,
+    update_investigation,
+)
 from false_alarm.domain.models import InvestigationDocument
 from false_alarm.errors import AlertNotFound, UnknownToolError, UnscopedQueryError
 from false_alarm.planner.actions import ToolAction
@@ -288,34 +294,49 @@ def start_investigation(alert_id: str) -> dict:
         ],
     }
     InvestigationDocument.model_validate(document)
-    insert_investigation(document)
-    return {"id": investigation_id, "status": "running"}
+    running = insert_investigation(document)
+    if running is not None:
+        return {"id": running, "status": "running", "created": False}
+    return {"id": investigation_id, "status": "running", "created": True}
+
+
+def _fail(investigation_id: str, stop_reason: str, summary: str, details: dict) -> None:
+    existing = get_investigation(investigation_id)
+    if existing is None:
+        return
+    existing["status"] = "failed"
+    existing["stop_reason"] = stop_reason
+    audit = list(existing.get("audit") or [])
+    audit.append(
+        {
+            "id": f"au-{len(audit) + 1:04d}",
+            "kind": "error",
+            "timestamp": utc_iso(utc_now()),
+            "summary": summary,
+            "details": details,
+        }
+    )
+    existing["audit"] = audit
+    InvestigationDocument.model_validate(existing)
+    update_investigation(existing)
+
+
+def recover_interrupted() -> list[str]:
+    """Fail runs a previous process left running. Call once at startup, before any run begins."""
+    ids = running_investigation_ids()
+    for investigation_id in ids:
+        _fail(investigation_id, "interrupted", "Investigation was interrupted when the service stopped", {})
+    return ids
 
 
 def execute_investigation(investigation_id: str) -> dict:
     try:
         return _execute(investigation_id)
     except Exception as exc:
-        existing = get_investigation(investigation_id)
-        if existing is not None:
-            existing["status"] = "failed"
-            existing["stop_reason"] = "failed"
-            audit = list(existing.get("audit") or [])
-            audit.append(
-                {
-                    "id": f"au-{len(audit) + 1:04d}",
-                    "kind": "error",
-                    "timestamp": utc_iso(utc_now()),
-                    "summary": "Investigation failed",
-                    "details": {"error": str(exc)},
-                }
-            )
-            existing["audit"] = audit
-            try:
-                InvestigationDocument.model_validate(existing)
-                update_investigation(existing)
-            except Exception:
-                logger.exception("Could not persist the failed investigation")
+        try:
+            _fail(investigation_id, "failed", "Investigation failed", {"error": str(exc)})
+        except Exception:
+            logger.exception("Could not persist the failed investigation")
         logger.exception("Investigation %s failed", investigation_id)
         raise
 
@@ -480,4 +501,6 @@ def _execute(investigation_id: str) -> dict:
 def run_investigation(alert_id: str) -> dict:
     """Run to completion on the calling thread. Tests and the API worker both use this path."""
     started = start_investigation(alert_id)
+    if not started["created"]:
+        return get_investigation(started["id"])
     return execute_investigation(started["id"])

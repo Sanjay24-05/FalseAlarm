@@ -8,6 +8,7 @@ const LABELS: Record<string, string> = {
   tool_call_budget: "Tool call budget",
   time_budget: "Time budget",
   unknown_tool: "Unknown tool",
+  interrupted: "Interrupted",
   likely_benign: "Likely benign",
   suspicious: "Suspicious",
   confirmed_threat: "Confirmed threat",

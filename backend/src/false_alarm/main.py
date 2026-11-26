@@ -11,12 +11,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from false_alarm.api.routes import router
+from false_alarm.agent.loop import recover_interrupted
 from false_alarm.db import init_db
 
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     init_db()
+    recover_interrupted()
     yield
 
 

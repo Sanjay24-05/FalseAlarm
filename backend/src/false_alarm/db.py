@@ -140,12 +140,29 @@ def latest_verdicts() -> dict[str, str]:
     return verdicts
 
 
-def insert_investigation(document: dict[str, Any]) -> None:
+def running_investigation_ids() -> list[str]:
+    connection = connect()
+    try:
+        rows = connection.execute("SELECT id FROM investigations WHERE status = 'running'").fetchall()
+    finally:
+        connection.close()
+    return [row["id"] for row in rows]
+
+
+def insert_investigation(document: dict[str, Any]) -> str | None:
+    """Store a new run unless the alert already has one running. Returns the running run's id instead."""
     stamp = utc_iso(utc_now())
     with _lock:
         connection = connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            running = connection.execute(
+                "SELECT id FROM investigations WHERE alert_id = ? AND status = 'running' ORDER BY created_at LIMIT 1",
+                (document["alert_id"],),
+            ).fetchone()
+            if running is not None:
+                connection.rollback()
+                return running["id"]
             connection.execute(
                 """
                 INSERT INTO investigations (id, alert_id, status, document, created_at, updated_at)
@@ -166,6 +183,7 @@ def insert_investigation(document: dict[str, Any]) -> None:
             raise
         finally:
             connection.close()
+    return None
 
 
 def update_investigation(document: dict[str, Any]) -> None:

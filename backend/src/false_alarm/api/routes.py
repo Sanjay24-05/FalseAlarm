@@ -134,7 +134,8 @@ def post_investigation(body: InvestigateRequest, background: BackgroundTasks) ->
         started = start_investigation(body.alert_id)
     except AlertNotFound:
         raise HTTPException(status_code=404, detail="Alert not found") from None
-    background.add_task(execute_investigation, started["id"])
+    if started["created"]:
+        background.add_task(execute_investigation, started["id"])
     return JSONResponse(status_code=202, content={"id": started["id"], "status": "running"})
 
 
