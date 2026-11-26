@@ -204,10 +204,13 @@ def covered_questions(
     return covered
 
 
+def askable_questions(questions: list[QuestionTemplate], context: Context) -> list[QuestionTemplate]:
+    """Questions whose inputs are known and that have not been answered."""
+    return [question for question in questions if question.tool not in CONTROL_TOOLS and _available(question, context, 0, 0)]
+
+
 def open_question_count(questions: list[QuestionTemplate], context: Context) -> int:
-    return sum(
-        1 for question in questions if question.tool not in CONTROL_TOOLS and _available(question, context, 0, 0)
-    )
+    return len(askable_questions(questions, context))
 
 
 def next_question(

@@ -10,7 +10,7 @@ An investigation has two separate jobs.
 
 **Planner.** A playbook is chosen from the alert name, description, and MITRE techniques: `authentication`, `malware`, `outbound`, or `generic`. The next playbook action is the highest-priority unanswered question whose inputs are already known. If an LLM is configured, it may propose that action instead. The proposal must be one JSON tool call. An invalid response, including a tool outside the allowlist, is tried once more, then the playbook is used. The planner may filter by `user`, `host`, and `iocs`. The loop supplies the time window and the event limit.
 
-The model can change the order of the investigation, not its extent. The playbook action replaces a proposal that finishes while questions are open, names no user, host, or indicator, or repeats a query that already ran. Once the remaining tool calls are only enough for the open questions and `finish`, only the playbook plans. A question counts as answered only when a query includes every filter the playbook would have used; a `question_id` from the model is ignored. Each replacement is in the audit trail with its reason.
+The model can change the order of the investigation, not its extent. The playbook action replaces a proposal that finishes while questions are open, names no user, host, or indicator, names one this case has not seen in the alert or its evidence, or repeats a query that already ran. Once the remaining tool calls are only enough for the open questions and `finish`, only the playbook plans. A question counts as answered only when a query includes every filter the playbook would have used; a `question_id` from the model is ignored. Each replacement is in the audit trail with its reason.
 
 Allowlisted tools:
 
@@ -102,11 +102,13 @@ Every successful sign-in in the window is judged, not only the first. Access-sta
 
 Later-action signals are: access to a high or critical asset outside the user's typical file servers, an unusual outbound transfer, endpoint activity marked malicious or high/critical, or a related alert of medium severity or higher. A later-action record counts only when it belongs to the alert's user, or names no person (or a machine account) and belongs to the alert's host or sign-in source; it does not precede the access; and the firewall did not block it. Harmful records that fail this are a material gap: they prevent `likely_benign` but do not confirm a threat. An outbound transfer counts when its destination has a negative local reputation, or when the byte count reaches the greater of 50,000,000 and five times that user's typical outbound volume.
 
-- `likely_benign` when every successful authentication comes from a corporate VPN range, a scanner range, or a baseline source, there are fewer than three failures from any other source, and there is no later-action signal and no negative reputation. This does not escalate.
+- `likely_benign` when every successful authentication comes from a corporate VPN range, a scanner range, or a baseline source, there are fewer than three failures from any other source, there is no later-action signal and no negative reputation, and no material gap remains other than an indicator with no reputation record. This does not escalate.
 - `confirmed_threat` when at least one access-stage signal and at least one later-action signal are both present, and the benign case above does not apply. This always escalates.
 - `suspicious` otherwise. This escalates when a material gap remains, or when a source outside the baseline and known-good ranges succeeded after three or more failures from that same source.
 
-Material gaps are: no authentication events, threat intelligence not queried, a reputation stored as unknown, harmful activity that could not be attributed to the sign-in, or a query that reached its event limit. A query that reaches its limit keeps the newest events and rules out `likely_benign`. High confidence requires at least three evidence source types, no material gap, and a verdict of `confirmed_threat` or `likely_benign`.
+Material gaps are: no authentication events, threat intelligence not queried, a reputation stored as unknown, harmful activity that could not be attributed to the sign-in, sign-ins by other accounts from an untrusted source tied to the alert, a query that reached its event limit, source records that could not be read, or playbook questions the run ended without asking (a run that used up its tool or time budget). A query that reaches its limit keeps the newest events. Every material gap except an unknown reputation rules out `likely_benign`.
+
+User names are compared by account: `CORP\bob`, `bob@corp.local`, and `BOB` are the same user. High confidence requires at least three evidence source types, no material gap, and a verdict of `confirmed_threat` or `likely_benign`.
 
 Assessed severity is independent of the alert's original severity. `likely_benign` is `low` when authentication evidence exists, otherwise `informational`. Both a sensitive-asset access and an unusual outbound transfer make it `critical`. Either of those, or malicious endpoint activity, or a confirmed threat, makes it `high`. A suspicious case with none of those is `medium`.
 
@@ -158,7 +160,7 @@ Each log family (`authentication`, `firewall`, `endpoint`, `dns`, `related_alert
 | `file` (default) | `<family>.json` in every directory under `FALSE_ALARM_SCENARIOS_DIR`, the demo data | each scenario's `context.json` |
 | `jsonl` | `<family>.jsonl` in `FALSE_ALARM_LOGS_DIR`, one JSON record per line, such as a SIEM export | `context.json` in the same directory |
 
-With `jsonl`, the demo data is not read, and lines that are not JSON objects with a valid timestamp are skipped and counted in a warning. `FALSE_ALARM_LOGS_DIR` is required for it.
+With `jsonl`, the demo data is not read. A record's time may be ISO 8601 text in `timestamp` or `@timestamp`, or epoch seconds or milliseconds. Lines that are not JSON objects with a readable time are skipped, logged, and reported as a material gap for that family, so they rule out `likely_benign`. `FALSE_ALARM_LOGS_DIR` is required for it.
 
 ### Add a connector
 

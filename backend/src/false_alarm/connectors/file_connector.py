@@ -45,6 +45,8 @@ class QueryResult(BaseModel):
     timestamp: str
     events: list[dict[str, Any]]
     truncated: bool
+    # Records in the source that could not be read at all, whether or not they would have matched.
+    skipped: int = 0
 
 
 def clear_connector_cache() -> None:
@@ -88,6 +90,19 @@ def _address(record: dict, key: str) -> str | None:
     return canonical_ip(text) or text
 
 
+def _timestamp(value: object) -> str | None:
+    """ISO 8601 text, or epoch seconds or milliseconds, as UTC ISO text."""
+    try:
+        if isinstance(value, str):
+            return utc_iso(parse_datetime(value))
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            seconds = value / 1000 if abs(value) >= 100_000_000_000 else value
+            return utc_iso(datetime.fromtimestamp(seconds, timezone.utc))
+    except (ValueError, OverflowError, OSError):
+        return None
+    return None
+
+
 def normalize_log(source_type: str, record: dict, scenario: str) -> dict[str, Any] | None:
     if not isinstance(record, dict):
         return None
@@ -101,12 +116,8 @@ def normalize_log(source_type: str, record: dict, scenario: str) -> dict[str, An
         event["reputation"] = (_text(record, "reputation") or "unknown").lower()
         return event
 
-    raw_time = record.get("timestamp")
-    if not isinstance(raw_time, str):
-        return None
-    try:
-        timestamp = utc_iso(parse_datetime(raw_time))
-    except ValueError:
+    timestamp = _timestamp(record.get("timestamp", record.get("@timestamp")))
+    if timestamp is None:
         return None
     event = _blank_event(scenario, timestamp)
     event["username"] = _text(record, "username", "user")
@@ -238,7 +249,13 @@ class FileConnector:
 
 
 def select_events(
-    source: str, source_type: str, events: list[dict[str, Any]], request: QueryRequest, hard_cap: int
+    source: str,
+    source_type: str,
+    events: list[dict[str, Any]],
+    request: QueryRequest,
+    hard_cap: int,
+    *,
+    skipped: int = 0,
 ) -> QueryResult:
     """Filter normalized events by the request, cap them, and describe the query. Shared by record connectors.
 
@@ -285,4 +302,5 @@ def select_events(
         timestamp=observed,
         events=chosen,
         truncated=truncated,
+        skipped=skipped,
     )

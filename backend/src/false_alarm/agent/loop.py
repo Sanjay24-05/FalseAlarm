@@ -15,6 +15,7 @@ from false_alarm.agent.observe import event_fingerprint, make_observation, unkno
 from false_alarm.agent.tools import execute_tool
 from false_alarm.connectors.registry import build_registry
 from false_alarm.assessment.rules import assess
+from false_alarm.assessment.signals import account, fold
 from false_alarm.correlation.engine import build_timeline
 from false_alarm.db import (
     get_alert_row,
@@ -30,6 +31,7 @@ from false_alarm.planner.llm import bounded_summary, choose_action
 from false_alarm.planner.playbooks import (
     CONTROL_TOOLS,
     QuestionTemplate,
+    askable_questions,
     covered_questions,
     open_question_count,
     playbook_action,
@@ -60,6 +62,7 @@ class RunState:
     seen: set[str] = field(default_factory=set)
     executed: set[str] = field(default_factory=set)
     truncated: set[str] = field(default_factory=set)
+    unreadable: dict[str, int] = field(default_factory=dict)
     tool_calls: int = 0
     evidence_seq: int = 0
     query_seq: int = 0
@@ -189,6 +192,32 @@ def _query_key(action: ToolAction, arguments: dict) -> str:
     return json.dumps([action.tool, filters], sort_keys=True).casefold()
 
 
+def _case_entities(state: RunState) -> tuple[set[str], set[str], set[str]]:
+    """Users, hosts, and indicators this case has seen: from the alert, its context, and stored evidence."""
+    context = state.context
+    users = {account(context.username)} if context.username else set()
+    hosts = {fold(context.hostname)} if context.hostname else set()
+    indicators = {fold(value) for value in (context.src_ip, context.dst_ip) if value}
+    indicators |= {fold(value) for value in (*context.external_ips, *context.domains, *context.hashes)}
+    indicators |= {fold(ioc.get("value")) for ioc in state.alert.get("iocs") or []}
+    for item in state.evidence:
+        entities = item.get("entities") or {}
+        users |= {account(value) for value in entities.get("users") or []}
+        hosts |= {fold(value) for value in entities.get("hosts") or []}
+        for key in ("ips", "domains", "hashes", "hosts"):
+            indicators |= {fold(value) for value in entities.get(key) or []}
+    return users, hosts, indicators
+
+
+def _outside_case(state: RunState, arguments: dict) -> bool:
+    users, hosts, indicators = _case_entities(state)
+    if arguments.get("user") and account(arguments["user"]) not in users:
+        return True
+    if arguments.get("host") and fold(arguments["host"]) not in hosts:
+        return True
+    return any(fold(value) not in indicators for value in arguments.get("iocs") or [])
+
+
 def _override_reason(
     state: RunState, action: ToolAction, fallback: ToolAction | None, settings: Settings
 ) -> str | None:
@@ -211,6 +240,8 @@ def _override_reason(
     arguments = _enforce_arguments(action, state, settings.max_events)
     if not any(arguments.get(key) for key in ("user", "host", "iocs")):
         return "The model proposed a query with no user, host, or indicator"
+    if _outside_case(state, arguments):
+        return "The model proposed a query about a user, host, or indicator outside this case"
     if _query_key(action, arguments) in state.executed:
         return "The model repeated a query that already ran"
     return None
@@ -247,6 +278,8 @@ def _finalize(state: RunState, status: str, stop_reason: str) -> dict:
         _open_questions(state),
         answered_questions=set(state.context.answered),
         truncated=sorted(state.truncated),
+        unasked=[question.text for question in askable_questions(state.questions, state.context)],
+        unreadable=dict(state.unreadable),
     )
     _audit(
         state,
@@ -455,6 +488,8 @@ def _execute(investigation_id: str) -> dict:
             source_name = result["source"]
             if result["truncated"]:
                 state.truncated.add(outcome["source_type"])
+            if result.get("skipped"):
+                state.unreadable[outcome["source_type"]] = result["skipped"]
             repeats: Counter[str] = Counter()
             for event in outcome["events"]:
                 if _remember(state, outcome["source_type"], event, query_id, source_name, repeats) is not None:

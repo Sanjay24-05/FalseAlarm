@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 
 from false_alarm.assessment.signals import (
     Access,
@@ -30,16 +30,17 @@ class _Case:
     intel: Intel
     truncated: Sequence[str]
     answered_questions: set[str]
+    unasked: Sequence[str] = ()
+    unreadable: Mapping[str, int] = field(default_factory=dict)
 
     @property
     def strong_benign(self) -> bool:
-        return (
-            self.access.supported_benign
-            and not self.later.harm
-            and not self.later.set_aside
-            and not self.intel.negative
-            and not self.truncated
-        )
+        """Benign needs supported sign-ins, no harm, no bad reputation, and no gap except an unrated indicator.
+
+        Every other gap means evidence the verdict did not see, so it fails toward suspicious.
+        """
+        blocking = [kind for kind, _message in _gaps(self) if kind != "unknown_reputation"]
+        return self.access.supported_benign and not self.later.harm and not self.intel.negative and not blocking
 
 
 def _statement(event: dict, clause: str) -> dict[str, str]:
@@ -65,25 +66,57 @@ def _severity(case: _Case, verdict: str) -> str:
     return "medium"
 
 
-def _material_gaps(case: _Case) -> list[str]:
-    """Gaps that limit confidence. Every gap is material, so `missing_evidence` is the same list."""
-    gaps: list[str] = []
+def _gaps(case: _Case) -> list[tuple[str, str]]:
+    """Gaps that limit confidence, each with its kind. Every gap is material."""
+    gaps: list[tuple[str, str]] = []
     if not case.access.auth:
-        gaps.append("No authentication events were retrieved; the access stage is incomplete.")
+        gaps.append(("no_authentication", "No authentication events were retrieved; the access stage is incomplete."))
     if not case.intel.records and "q_ti" not in case.answered_questions:
-        gaps.append("Threat intelligence was not queried; missing reputation is unknown, not benign.")
+        gaps.append(("intel_not_queried", "Threat intelligence was not queried; missing reputation is unknown, not benign."))
     for item in case.intel.unknown:
         indicator = defang_citations(str(item["raw"].get("indicator")))
-        gaps.append(f"Reputation for {indicator} is unknown, not benign.")
+        gaps.append(("unknown_reputation", f"Reputation for {indicator} is unknown, not benign."))
     for source_type in case.truncated:
-        gaps.append(f"The {source_type} query reached its event limit; older matching records were not retrieved.")
+        gaps.append(
+            ("truncated", f"The {source_type} query reached its event limit; older matching records were not retrieved.")
+        )
+    for source_type, count in sorted(case.unreadable.items()):
+        gaps.append(
+            (
+                "unreadable",
+                f"{count} record(s) in the {source_type} source could not be read; they may hold activity this "
+                "verdict did not see.",
+            )
+        )
+    if case.unasked:
+        gaps.append(
+            (
+                "unasked",
+                "The run ended with these questions not asked: " + "; ".join(defang_citations(q) for q in case.unasked),
+            )
+        )
     if case.later.set_aside:
         ids = ", ".join(item["id"] for item in case.later.set_aside)
         gaps.append(
-            f"Potentially harmful activity was not attributed to this sign-in ({ids}): "
-            "it belongs to another account, precedes the access, or was blocked."
+            (
+                "unattributed",
+                f"Potentially harmful activity was not attributed to this sign-in ({ids}): "
+                "it belongs to another account, precedes the access, or was blocked.",
+            )
+        )
+    if case.access.foreign:
+        ids = ", ".join(item["id"] for item in case.access.foreign)
+        gaps.append(
+            (
+                "unattributed",
+                f"Sign-ins for other accounts came from an untrusted source tied to this alert ({ids}).",
+            )
         )
     return gaps
+
+
+def _material_gaps(case: _Case) -> list[str]:
+    return [message for _kind, message in _gaps(case)]
 
 
 def _confidence(case: _Case, verdict: str, gaps: list[str]) -> tuple[str, str]:
@@ -239,13 +272,15 @@ def assess(
     *,
     answered_questions: set[str],
     truncated: Sequence[str] = (),
+    unasked: Sequence[str] = (),
+    unreadable: Mapping[str, int] | None = None,
 ) -> tuple[dict, list[dict], dict]:
     """The assessment, the hypotheses it tested, and the signals behind it (for the audit trail)."""
     baseline = catalog.baseline_for(alert.get("username"))
     access = access_signals(alert, evidence, catalog, baseline)
     intel = intel_signals(evidence)
     later = later_actions(alert, evidence, catalog, baseline, access, intel)
-    case = _Case(evidence, access, later, intel, truncated, answered_questions)
+    case = _Case(evidence, access, later, intel, truncated, answered_questions, unasked, dict(unreadable or {}))
 
     verdict = _verdict(case)
     severity = _severity(case, verdict)

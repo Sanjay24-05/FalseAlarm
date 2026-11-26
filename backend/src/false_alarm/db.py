@@ -44,7 +44,8 @@ MIGRATIONS: tuple[str, ...] = (
     """,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
-_migrated: set[str] = set()
+# Separate from _lock: writers hold _lock while they connect, and connecting may migrate.
+_migration_lock = threading.Lock()
 
 
 def _migrate(connection: sqlite3.Connection) -> None:
@@ -63,11 +64,10 @@ def connect() -> sqlite3.Connection:
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys=ON")
     connection.execute("PRAGMA synchronous=NORMAL")
-    if path not in _migrated:
-        with _lock:
-            if path not in _migrated:
-                _migrate(connection)
-                _migrated.add(path)
+    # Reading the version is cheap, and it also recreates the schema when the file was deleted while running.
+    if connection.execute("PRAGMA user_version").fetchone()[0] < SCHEMA_VERSION:
+        with _migration_lock:
+            _migrate(connection)
     return connection
 
 

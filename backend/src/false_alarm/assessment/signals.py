@@ -20,14 +20,20 @@ def fold(value: object) -> str:
     return value.strip().casefold() if isinstance(value, str) else ""
 
 
+def account(value: object) -> str:
+    """The account part of a user name: `CORP\\bob`, `bob@corp.local` and `BOB` are all `bob`."""
+    name = fold(value).rsplit("\\", 1)[-1]
+    return name.split("@", 1)[0] if "@" in name else name
+
+
 def is_machine_account(username: str) -> bool:
-    return username.endswith("$") or username.rsplit("\\", 1)[-1] in MACHINE_ACCOUNTS
+    return username.endswith("$") or account(username) in MACHINE_ACCOUNTS
 
 
 def _user_matches(event: dict, username: str | None) -> bool:
     if not username:
         return True
-    return (event["raw"].get("username") or "").casefold() == username.casefold()
+    return account(event["raw"].get("username")) == account(username)
 
 
 def _reputation(item: dict) -> str:
@@ -50,6 +56,9 @@ class Access:
     anchor: str
     subject_users: set[str]
     subject_ips: set[str | None]
+    # Sign-ins by other accounts from an untrusted source tied to this alert. They can't be attributed to the
+    # alert's user, so they don't confirm a threat, but they rule out a benign verdict.
+    foreign: list[dict]
 
     def prior_failures(self, success: dict) -> list[dict]:
         source_ip = success["raw"].get("src_ip")
@@ -96,17 +105,27 @@ def access_signals(alert: dict, evidence: list[dict], catalog: Catalog, baseline
         anchor=min((item["observed_at"] for item in (outside or successes or failures)), default=""),
         subject_users=set(),
         subject_ips={item["raw"].get("src_ip") for item in successes} | {alert.get("src_ip")},
+        foreign=[],
     )
+    if username:
+        access.foreign = [
+            item
+            for item in auth
+            if not _user_matches(item, username)
+            and item["raw"].get("src_ip") in access.subject_ips
+            and item["raw"].get("src_ip")
+            and not supported(item)
+        ]
     guessed = [item for item in successes if access.prior_failures(item)]
     access.compromised = [item for item in new_source if len(access.prior_failures(item)) >= REPEATED]
     # The login the case rests on: the most suspicious one, not the first one.
     access.primary_success = next(iter(access.compromised or new_source or outside or guessed or successes), None)
 
     if username:
-        access.subject_users = {fold(username)}
+        access.subject_users = {account(username)}
     else:
         access.subject_users = {
-            fold(item["raw"].get("username")) for item in successes if item["raw"].get("src_ip") == alert.get("src_ip")
+            account(item["raw"].get("username")) for item in successes if item["raw"].get("src_ip") == alert.get("src_ip")
         }
     access.subject_users.discard("")
 
@@ -114,7 +133,7 @@ def access_signals(alert: dict, evidence: list[dict], catalog: Catalog, baseline
     many_accounts = any(
         len(
             {
-                (item["raw"].get("username") or "").casefold()
+                account(item["raw"].get("username"))
                 for item in auth
                 if item["raw"].get("src_ip") == account_ip and item["raw"].get("username")
             }
@@ -189,7 +208,7 @@ def later_actions(
 
     def attributed(item: dict) -> bool:
         """The record belongs to the alert's user, or names no person and belongs to its host or source."""
-        user = fold(item["raw"].get("username"))
+        user = account(item["raw"].get("username"))
         if user in access.subject_users:
             return True
         if user and access.subject_users and not is_machine_account(user):
