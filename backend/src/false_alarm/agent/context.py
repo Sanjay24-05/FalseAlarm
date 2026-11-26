@@ -19,6 +19,7 @@ class Context:
     needs_expansion: bool = False
     answered: set[str] = field(default_factory=set)
     empty_question_ids: set[str] = field(default_factory=set)
+    looked_up: set[str] = field(default_factory=set)
 
     def known(self, key: str) -> bool:
         value = getattr(self, key)
@@ -64,7 +65,7 @@ def context_from_alert(alert: dict) -> Context:
         value = ioc.get("value")
         if not value:
             continue
-        if ioc_type == "ipv4" and is_external_ip(value):
+        if ioc_type in {"ipv4", "ipv6"} and is_external_ip(value):
             context.external_ips.add(value)
         elif ioc_type == "domain":
             context.domains.add(str(value).lower())

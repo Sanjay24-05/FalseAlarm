@@ -13,7 +13,7 @@ from uuid import uuid4
 from false_alarm.domain.models import Alert
 from false_alarm.ingest.iocs import extract_iocs
 from false_alarm.db import alert_id_exists, get_alert_row_by_fingerprint, save_alert
-from false_alarm.util import minute_bucket, parse_datetime, utc_iso
+from false_alarm.util import canonical_ip, minute_bucket, parse_datetime, utc_iso
 
 SEVERITIES = {"informational", "low", "medium", "high", "critical"}
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
@@ -88,6 +88,17 @@ def _optional_string(
             _warn(warnings, key, f"{key} was empty")
         return None
     return text
+
+
+def _ip_field(payload: dict, key: str, warnings: list[dict[str, str]], errors: list[dict[str, str]]) -> str | None:
+    """An address in canonical form. A value that is not an address is dropped with a warning, not an error."""
+    text = _optional_string(payload, key, warnings, errors, warn_if_missing=True)
+    if text is None:
+        return None
+    address = canonical_ip(text)
+    if address is None:
+        _warn(warnings, key, f"{key} is not an IP address and was ignored")
+    return address
 
 
 def _string_list(
@@ -217,8 +228,8 @@ def ingest_alert(payload: Any) -> IngestResult:
                 "severity must be informational, low, medium, high, or critical",
             )
 
-    src_ip = _optional_string(payload, "src_ip", warnings, errors, warn_if_missing=True)
-    dst_ip = _optional_string(payload, "dst_ip", warnings, errors, warn_if_missing=True)
+    src_ip = _ip_field(payload, "src_ip", warnings, errors)
+    dst_ip = _ip_field(payload, "dst_ip", warnings, errors)
     username = _optional_string(payload, "username", warnings, errors, warn_if_missing=True)
     hostname = _optional_string(payload, "hostname", warnings, errors, warn_if_missing=True)
     file_hashes = _string_list(payload, "file_hashes", errors, transform=str.lower)

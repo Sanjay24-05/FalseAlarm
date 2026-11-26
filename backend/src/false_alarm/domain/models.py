@@ -11,7 +11,7 @@ Verdict = Literal["likely_benign", "suspicious", "confirmed_threat"]
 Confidence = Literal["low", "medium", "high"]
 Relationship = Literal["observed", "inferred"]
 InvestigationStatus = Literal["queued", "running", "completed", "failed", "budget_exhausted"]
-IOCType = Literal["ipv4", "domain", "md5", "sha1", "sha256", "url", "email", "hostname"]
+IOCType = Literal["ipv4", "ipv6", "domain", "md5", "sha1", "sha256", "url", "email", "hostname"]
 
 
 class IOC(BaseModel):

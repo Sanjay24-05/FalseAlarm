@@ -458,6 +458,7 @@ def _execute(investigation_id: str) -> dict:
                 if _remember(state, outcome["source_type"], event, query_id, source_name, repeats) is not None:
                     added += 1
             if outcome["source_type"] == "threat_intel":
+                state.context.looked_up.update(arguments.get("iocs") or [])
                 found = {
                     str(event.get("indicator")).casefold()
                     for event in outcome["events"]

@@ -10,7 +10,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from false_alarm.scenarios import scenario_dirs
-from false_alarm.util import parse_datetime, unique_strings, utc_iso, utc_now
+from false_alarm.util import canonical_ip, parse_datetime, unique_strings, utc_iso, utc_now
 
 _CACHE: dict[tuple, list[dict[str, Any]]] = {}
 _ACTION_ALIASES = {
@@ -83,6 +83,11 @@ def _text(record: dict, *keys: str) -> str | None:
     return None
 
 
+def _address(record: dict, key: str) -> str | None:
+    text = _text(record, key)
+    return canonical_ip(text) or text
+
+
 def normalize_log(source_type: str, record: dict, scenario: str) -> dict[str, Any] | None:
     if not isinstance(record, dict):
         return None
@@ -106,10 +111,10 @@ def normalize_log(source_type: str, record: dict, scenario: str) -> dict[str, An
     event = _blank_event(scenario, timestamp)
     event["username"] = _text(record, "username", "user")
     event["hostname"] = _text(record, "hostname", "host", "src_host")
-    event["src_ip"] = _text(record, "src_ip")
+    event["src_ip"] = _address(record, "src_ip")
     event["dst_host"] = _text(record, "dst_host")
-    event["resolved_ip"] = _text(record, "resolved_ip")
-    event["dst_ip"] = _text(record, "dst_ip") or event["resolved_ip"]
+    event["resolved_ip"] = _address(record, "resolved_ip")
+    event["dst_ip"] = _address(record, "dst_ip") or event["resolved_ip"]
     action = _text(record, "action")
     if action:
         event["action"] = _ACTION_ALIASES.get(action.lower(), action.lower())

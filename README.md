@@ -100,6 +100,10 @@ Material gaps are: no authentication events, threat intelligence not queried, a 
 
 Assessed severity is independent of the alert's original severity. `likely_benign` is `low` when authentication evidence exists, otherwise `informational`. Both a sensitive-asset access and an unusual outbound transfer make it `critical`. Either of those, or malicious endpoint activity, or a confirmed threat, makes it `high`. A suspicious case with none of those is `medium`.
 
+## Indicators
+
+Indicators are taken from the alert's structured fields and its text. IPv4 and IPv6 addresses are stored in canonical form; an `src_ip` or `dst_ip` that is not an address is dropped with a warning. A URL contributes only its host as a domain, and names ending in a file extension (`invoice.pdf`, `payload.dll`) or equal to the alert's username are not domains. Private, loopback, link-local, carrier-grade NAT, and unique-local ranges are internal; documentation ranges such as `203.0.113.0/24` count as external. Threat intelligence is looked up again whenever later evidence adds an indicator that has not been rated.
+
 ## LLM settings
 
 The planner calls a model only when all of these are set. `FALSE_ALARM_LLM_ENABLED` must be `1`, `true`, `yes`, or `on`. The other three must be non-empty.
