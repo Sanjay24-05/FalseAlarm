@@ -7,15 +7,15 @@ import math
 import re
 import sqlite3
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, get_args
 from uuid import uuid4
 
-from false_alarm.domain.models import Alert
+from false_alarm.domain.models import Alert, Severity
 from false_alarm.ingest.iocs import extract_iocs
 from false_alarm.db import alert_id_exists, get_alert_row_by_fingerprint, save_alert
 from false_alarm.util import canonical_ip, minute_bucket, parse_datetime, utc_iso
 
-SEVERITIES = {"informational", "low", "medium", "high", "critical"}
+SEVERITIES = frozenset(get_args(Severity))
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 _MAX_DEPTH = 64
 # Room on both sides for the investigation window and its expansions.

@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from uuid import uuid4
 
-from false_alarm.agent.context import Context, context_from_alert
+from false_alarm.planner.context import Context, context_from_alert
 from false_alarm.agent.observe import event_fingerprint, make_observation, unknown_reputation_event
 from false_alarm.agent.tools import execute_tool
 from false_alarm.assessment.rules import assess
@@ -470,13 +470,6 @@ def _execute(investigation_id: str) -> dict:
                     miss = unknown_reputation_event(str(indicator), result["timestamp"])
                     if _remember(state, "threat_intel", miss, query_id, source_name, repeats) is not None:
                         added += 1
-                if settings.external_ti_enabled:
-                    _audit(
-                        state,
-                        "external_ti",
-                        "External threat intelligence is enabled but v1 has no external provider; the local scenario feed was used",
-                        {},
-                    )
             if added == 0 and not state.evidence and answers:
                 state.context.needs_expansion = True
                 state.context.empty_question_ids.update(answers)

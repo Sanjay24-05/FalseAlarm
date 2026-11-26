@@ -34,7 +34,6 @@ class Settings(BaseModel):
     llm_base_url: str
     llm_api_key: str
     llm_model: str
-    external_ti_enabled: bool
     max_tool_calls: int
     max_events: int
     max_window_expansions: int
@@ -62,7 +61,6 @@ def get_settings() -> Settings:
         llm_base_url=os.environ.get("FALSE_ALARM_LLM_BASE_URL", ""),
         llm_api_key=os.environ.get("FALSE_ALARM_LLM_API_KEY", ""),
         llm_model=os.environ.get("FALSE_ALARM_LLM_MODEL", ""),
-        external_ti_enabled=_flag("FALSE_ALARM_EXTERNAL_TI_ENABLED", False),
         max_tool_calls=_number("FALSE_ALARM_MAX_TOOL_CALLS", 12),
         max_events=_number("FALSE_ALARM_MAX_EVENTS", 200),
         max_window_expansions=_number("FALSE_ALARM_MAX_WINDOW_EXPANSIONS", 2),

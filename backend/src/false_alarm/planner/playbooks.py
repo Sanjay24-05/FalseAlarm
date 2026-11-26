@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 
-from false_alarm.agent.context import Context
+from false_alarm.planner.context import Context
 from false_alarm.domain.models import Question
 from false_alarm.planner.actions import ToolAction
 from false_alarm.util import unique_strings, utc_iso
@@ -30,7 +30,6 @@ class QuestionTemplate:
     text: str
     tool: str
     requires_any: tuple[str, ...] = ()
-    requires_all: tuple[str, ...] = ()
 
     def as_question(self, answered: bool) -> Question:
         return Question(
@@ -176,8 +175,6 @@ def _available(question: QuestionTemplate, context: Context, expansions: int, ma
         # Indicators keep arriving as evidence is stored, so the lookup stays open while any are unrated.
         return bool(_unlooked_indicators(context))
     if question.id in context.answered:
-        return False
-    if question.requires_all and not all(context.known(key) for key in question.requires_all):
         return False
     if question.requires_any and not any(context.known(key) for key in question.requires_any):
         return False

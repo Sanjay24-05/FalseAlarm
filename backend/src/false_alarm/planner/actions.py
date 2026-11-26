@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from false_alarm.agent.allowlist import ALLOWED_TOOLS
+from false_alarm.domain.allowlist import ALLOWED_TOOLS
 
 
 class ToolAction(BaseModel):

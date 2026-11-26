@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from false_alarm.agent.allowlist import ALLOWED_TOOLS
+from false_alarm.domain.allowlist import ALLOWED_TOOLS
 from false_alarm.connectors.file_connector import FileConnector, QueryRequest
 from false_alarm.errors import UnknownToolError, UnscopedQueryError
 

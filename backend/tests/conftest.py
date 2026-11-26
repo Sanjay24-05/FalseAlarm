@@ -13,7 +13,6 @@ from false_alarm.settings import get_settings
 def isolated_settings(tmp_path, monkeypatch):
     monkeypatch.setenv("FALSE_ALARM_DB_PATH", str(tmp_path / "false_alarm.db"))
     monkeypatch.setenv("FALSE_ALARM_LLM_ENABLED", "false")
-    monkeypatch.setenv("FALSE_ALARM_EXTERNAL_TI_ENABLED", "false")
     monkeypatch.setenv("FALSE_ALARM_MAX_TOOL_CALLS", "12")
     monkeypatch.setenv("FALSE_ALARM_MAX_EVENTS", "200")
     monkeypatch.setenv("FALSE_ALARM_MAX_WINDOW_EXPANSIONS", "2")
