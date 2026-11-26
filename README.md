@@ -43,7 +43,7 @@ Python 3.12 and Node.js are required. From `backend`, create the virtualenv and 
 ```powershell
 cd E:\FalseAlarm\backend
 py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pip install -c requirements.lock -e ".[dev]"
 .\.venv\Scripts\python.exe -m uvicorn false_alarm.main:app --host 127.0.0.1 --port 8000
 ```
 
