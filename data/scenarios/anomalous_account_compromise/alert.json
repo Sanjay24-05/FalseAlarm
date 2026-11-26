@@ -1,0 +1,18 @@
+{
+  "source": "demo-siem",
+  "name": "Unusual account activity",
+  "description": "Behavior score for ochen exceeded its threshold.",
+  "severity": "medium",
+  "detected_at": "2026-05-17T09:40:00Z",
+  "src_ip": "203.0.113.120",
+  "dst_ip": null,
+  "username": "ochen",
+  "hostname": "WS-OCHEN",
+  "file_hashes": [],
+  "domains": [],
+  "urls": [],
+  "mitre_techniques": [],
+  "raw": {
+    "rule_id": "UEBA-SCORE"
+  }
+}

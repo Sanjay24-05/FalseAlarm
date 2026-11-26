@@ -1,0 +1,20 @@
+{
+  "source": "demo-siem",
+  "name": "Large outbound transfer to rare destination",
+  "description": "WS-DKIM sent an unusually large volume to 198.51.100.200.",
+  "severity": "high",
+  "detected_at": "2026-05-10T11:30:00Z",
+  "src_ip": "203.0.113.90",
+  "dst_ip": null,
+  "username": "dkim",
+  "hostname": "WS-DKIM",
+  "file_hashes": [],
+  "domains": [],
+  "urls": [],
+  "mitre_techniques": [
+    "T1048"
+  ],
+  "raw": {
+    "rule_id": "NET-EXFIL-VOLUME"
+  }
+}

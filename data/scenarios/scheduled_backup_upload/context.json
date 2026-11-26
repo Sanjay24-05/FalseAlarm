@@ -1,0 +1,22 @@
+{
+  "assets": [],
+  "corporate_vpn_ranges": [
+    "10.8.0.0/24"
+  ],
+  "known_good_ranges": [
+    "10.8.0.0/24"
+  ],
+  "scanner_ranges": [],
+  "baselines": {
+    "nwu": {
+      "typical_sources": [
+        "10.8.0.50"
+      ],
+      "typical_hosts": [
+        "WS-NWU"
+      ],
+      "typical_file_servers": [],
+      "typical_outbound_bytes": 20000000
+    }
+  }
+}

@@ -1,0 +1,34 @@
+[
+  {
+    "timestamp": "2026-05-10T10:50:00Z",
+    "username": "dkim",
+    "src_ip": "203.0.113.90",
+    "dst_ip": "10.0.0.20",
+    "hostname": "DC-01",
+    "action": "failure"
+  },
+  {
+    "timestamp": "2026-05-10T10:51:00Z",
+    "username": "dkim",
+    "src_ip": "203.0.113.90",
+    "dst_ip": "10.0.0.20",
+    "hostname": "DC-01",
+    "action": "failure"
+  },
+  {
+    "timestamp": "2026-05-10T10:52:00Z",
+    "username": "dkim",
+    "src_ip": "203.0.113.90",
+    "dst_ip": "10.0.0.20",
+    "hostname": "DC-01",
+    "action": "failure"
+  },
+  {
+    "timestamp": "2026-05-10T10:54:00Z",
+    "username": "dkim",
+    "src_ip": "203.0.113.90",
+    "dst_ip": "10.0.0.20",
+    "hostname": "DC-01",
+    "action": "success"
+  }
+]

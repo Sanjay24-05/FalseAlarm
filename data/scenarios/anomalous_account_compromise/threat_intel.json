@@ -1,0 +1,8 @@
+[
+  {
+    "indicator": "203.0.113.120",
+    "type": "ipv4",
+    "reputation": "malicious",
+    "source": "local-feed"
+  }
+]

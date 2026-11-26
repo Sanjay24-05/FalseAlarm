@@ -1,0 +1,13 @@
+[
+  {
+    "timestamp": "2026-05-17T16:10:00Z",
+    "username": "tsato",
+    "hostname": "WS-TSATO",
+    "src_ip": "10.8.0.60",
+    "dst_ip": "10.0.1.80",
+    "dst_host": "FS-TEAM",
+    "action": "allow",
+    "direction": "internal",
+    "bytes": 3000000
+  }
+]

@@ -1,0 +1,10 @@
+[
+  {
+    "timestamp": "2026-05-03T15:05:00Z",
+    "username": "rpatel",
+    "hostname": "WS-RPATEL",
+    "action": "process",
+    "severity": "low",
+    "file_hash": "9e107d9d372bb6826bd81d3542a419d6"
+  }
+]

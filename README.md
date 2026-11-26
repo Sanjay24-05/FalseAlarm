@@ -77,12 +77,20 @@ npx tsc --noEmit
 
 No API key is required. Leave the LLM variables unset. The playbook plans every step, and the file connector reads the scenario JSON.
 
-| Scenario | What it contains | Verdict | Escalation |
-| --- | --- | --- | --- |
-| `account_compromise` | Repeated authentication failures, a success from the same external address, access to a sensitive file server, and an unusual outbound transfer | `confirmed_threat` | yes |
-| `benign_vpn_login` | A mistyped password, then a sign-in from a known corporate VPN and ordinary file-server use | `likely_benign` | no |
+| Scenario | Playbook | What it contains | Verdict | Escalation |
+| --- | --- | --- | --- | --- |
+| `account_compromise` | authentication | Repeated authentication failures, a success from the same external address, access to a sensitive file server, and an unusual outbound transfer | `confirmed_threat` | yes |
+| `benign_vpn_login` | authentication | A mistyped password, then a sign-in from a known corporate VPN and ordinary file-server use | `likely_benign` | no |
+| `malware_after_guessed_login` | malware | A guessed sign-in from outside, then a known-bad binary runs on the user's workstation | `confirmed_threat` | yes |
+| `admin_tool_flagged` | malware | A VPN sign-in, then an administration tool with a clean hash is flagged | `likely_benign` | no |
+| `exfiltration_after_guessed_login` | outbound | A guessed sign-in from outside, then 300 MB sent to a known-bad address | `confirmed_threat` | yes |
+| `scheduled_backup_upload` | outbound | A VPN sign-in, then 30 MB uploaded to a clean backup address, within the user's usual volume | `likely_benign` | no |
+| `anomalous_account_compromise` | generic | A behavior alert; the account was guessed from outside and reached the HR file server | `confirmed_threat` | yes |
+| `anomalous_account_routine` | generic | A behavior alert; the account signed in from the VPN and used its usual file server | `likely_benign` | no |
 
-Load either one with the queue buttons or with `POST /api/scenarios/{id}/load`, then `POST /api/investigations` with `{"alert_id": "..."}`. The catalog is `GET /api/scenarios`.
+Every playbook has one malicious and one benign scenario. Each malicious one includes a guessed sign-in, because `confirmed_threat` needs an access-stage signal: malware or an outbound transfer with no sign-in evidence stays `suspicious`. Each scenario uses its own users, hosts, addresses, and day, because the file connector reads every scenario directory at once.
+
+Load any of them with the queue buttons or with `POST /api/scenarios/{id}/load`, then `POST /api/investigations` with `{"alert_id": "..."}`. The catalog is `GET /api/scenarios`.
 
 ## Triage rules
 

@@ -1,0 +1,20 @@
+{
+  "source": "demo-siem",
+  "name": "Outbound transfer to cloud storage",
+  "description": "WS-NWU uploaded data to 192.0.2.10.",
+  "severity": "low",
+  "detected_at": "2026-05-10T21:10:00Z",
+  "src_ip": "10.8.0.50",
+  "dst_ip": null,
+  "username": "nwu",
+  "hostname": "WS-NWU",
+  "file_hashes": [],
+  "domains": [],
+  "urls": [],
+  "mitre_techniques": [
+    "T1048"
+  ],
+  "raw": {
+    "rule_id": "NET-CLOUD-UPLOAD"
+  }
+}

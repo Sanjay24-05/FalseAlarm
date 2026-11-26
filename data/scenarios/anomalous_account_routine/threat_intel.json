@@ -1,0 +1,8 @@
+[
+  {
+    "indicator": "10.8.0.60",
+    "type": "ipv4",
+    "reputation": "clean",
+    "source": "local-feed"
+  }
+]

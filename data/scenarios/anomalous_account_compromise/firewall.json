@@ -1,0 +1,13 @@
+[
+  {
+    "timestamp": "2026-05-17T09:25:00Z",
+    "username": "ochen",
+    "hostname": "WS-OCHEN",
+    "src_ip": "10.0.6.20",
+    "dst_ip": "10.0.1.70",
+    "dst_host": "FS-HR",
+    "action": "allow",
+    "direction": "internal",
+    "bytes": 12000000
+  }
+]
