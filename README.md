@@ -41,7 +41,7 @@ The report has these sections: incident summary, alert details, triage, executiv
 Python 3.12 and Node.js are required. Commands below start from the repository root. From `backend`, create the virtualenv and install the package if that has not been done yet:
 
 ```powershell
-cd E:\FalseAlarm\backend
+cd backend
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -c requirements.lock -e ".[dev]"
 .\.venv\Scripts\python.exe -m uvicorn false_alarm.main:app --host 127.0.0.1 --port 8000
@@ -52,7 +52,7 @@ The API listens on `http://127.0.0.1:8000`. Alerts and investigations are writte
 In another shell, start the console:
 
 ```powershell
-cd E:\FalseAlarm\frontend
+cd frontend
 npm install
 npm run dev
 ```
@@ -62,14 +62,14 @@ Vite serves `http://localhost:5173` and proxies `/api` to `http://127.0.0.1:8000
 Backend tests:
 
 ```powershell
-cd E:\FalseAlarm\backend
+cd backend
 .\.venv\Scripts\python.exe -m pytest
 ```
 
 Console typecheck:
 
 ```powershell
-cd E:\FalseAlarm\frontend
+cd frontend
 npx tsc --noEmit
 ```
 
