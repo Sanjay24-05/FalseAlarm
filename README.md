@@ -8,7 +8,9 @@ The backend is a FastAPI service. The console is a Vite app that talks to it thr
 
 An investigation has two separate jobs.
 
-**Planner.** A playbook is chosen from the alert name, description, and MITRE techniques: `authentication`, `malware`, `outbound`, or `generic`. The next playbook action is the highest-priority unanswered question whose inputs are already known. If an LLM is configured, it may propose that action instead. The proposal must be one JSON tool call. An invalid response is tried once more, then the playbook is used. The planner may filter by `user`, `host`, and `iocs`. The loop supplies the time window and the event limit. A name outside the allowlist stops the run.
+**Planner.** A playbook is chosen from the alert name, description, and MITRE techniques: `authentication`, `malware`, `outbound`, or `generic`. The next playbook action is the highest-priority unanswered question whose inputs are already known. If an LLM is configured, it may propose that action instead. The proposal must be one JSON tool call. An invalid response, including a tool outside the allowlist, is tried once more, then the playbook is used. The planner may filter by `user`, `host`, and `iocs`. The loop supplies the time window and the event limit.
+
+The model can change the order of the investigation, not its extent. The playbook action replaces a proposal that finishes while questions are open, names no user, host, or indicator, or repeats a query that already ran. Once the remaining tool calls are only enough for the open questions and `finish`, only the playbook plans. A question counts as answered only when a query includes every filter the playbook would have used; a `question_id` from the model is ignored. Each replacement is in the audit trail with its reason.
 
 Allowlisted tools:
 

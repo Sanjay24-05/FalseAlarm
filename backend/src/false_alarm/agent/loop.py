@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections import Counter
@@ -19,10 +20,18 @@ from false_alarm.domain.models import InvestigationDocument
 from false_alarm.errors import AlertNotFound, UnknownToolError, UnscopedQueryError
 from false_alarm.planner.actions import ToolAction
 from false_alarm.planner.llm import bounded_summary, choose_action
-from false_alarm.planner.playbooks import QuestionTemplate, playbook_action, questions_for, select_playbook
+from false_alarm.planner.playbooks import (
+    CONTROL_TOOLS,
+    QuestionTemplate,
+    covered_questions,
+    open_question_count,
+    playbook_action,
+    questions_for,
+    select_playbook,
+)
 from false_alarm.reports.render import compose_report
 from false_alarm.scenarios import get_catalog
-from false_alarm.settings import get_settings
+from false_alarm.settings import Settings, get_settings
 from false_alarm.util import parse_datetime, utc_iso, utc_now
 
 logger = logging.getLogger("false_alarm.agent")
@@ -42,6 +51,7 @@ class RunState:
     steps: list[dict] = field(default_factory=list)
     audit: list[dict] = field(default_factory=list)
     seen: set[str] = field(default_factory=set)
+    executed: set[str] = field(default_factory=set)
     truncated: set[str] = field(default_factory=set)
     tool_calls: int = 0
     evidence_seq: int = 0
@@ -97,7 +107,7 @@ def _snapshot(
 
 
 def _enforce_arguments(action: ToolAction, state: RunState, limit: int) -> dict:
-    if action.tool in {"finish", "expand_time_window"}:
+    if action.tool in CONTROL_TOOLS:
         if action.tool == "expand_time_window":
             return {"start": utc_iso(state.window_start), "end": utc_iso(state.window_end)}
         return {}
@@ -107,14 +117,16 @@ def _enforce_arguments(action: ToolAction, state: RunState, limit: int) -> dict:
         "limit": limit,
     }
     supplied = action.arguments or {}
-    if supplied.get("user"):
-        arguments["user"] = str(supplied["user"])
-    if supplied.get("host"):
-        arguments["host"] = str(supplied["host"])
+    for key in ("user", "host"):
+        value = supplied.get(key)
+        if isinstance(value, str) and value.strip():
+            arguments[key] = value.strip()
     iocs = supplied.get("iocs") or []
     if isinstance(iocs, str):
         iocs = [iocs]
-    cleaned = [str(item) for item in iocs if item]
+    if not isinstance(iocs, list):
+        iocs = []
+    cleaned = [item.strip() for item in iocs if isinstance(item, str) and item.strip()]
     if cleaned:
         arguments["iocs"] = cleaned
     return arguments
@@ -154,23 +166,54 @@ def _expand(state: RunState) -> None:
     state.context.needs_expansion = False
 
 
-def _mark_answered(state: RunState, action: ToolAction) -> None:
+def _answers(state: RunState, action: ToolAction, arguments: dict) -> list[str]:
+    """Questions this action answers. The playbook names its own; a model's query has to earn them."""
     if action.tool == "expand_time_window":
-        return
+        return []
     if action.question_id:
-        state.context.answered.add(action.question_id)
-        return
-    for question in state.questions:
-        if question.tool == action.tool and question.id not in state.context.answered:
-            state.context.answered.add(question.id)
-            return
+        return [action.question_id]
+    return covered_questions(
+        state.questions, state.context, action.tool, arguments, state.window_start, state.window_end
+    )
+
+
+def _query_key(action: ToolAction, arguments: dict) -> str:
+    filters = {key: value for key, value in arguments.items() if key != "limit"}
+    return json.dumps([action.tool, filters], sort_keys=True).casefold()
+
+
+def _override_reason(
+    state: RunState, action: ToolAction, fallback: ToolAction | None, settings: Settings
+) -> str | None:
+    """Why a model's proposal must give way to the playbook, or None when it may run."""
+    if fallback is None:
+        return None
+    remaining = settings.max_tool_calls - state.tool_calls
+    does_the_same = action.tool == fallback.tool and (
+        action.tool == "finish"
+        or fallback.question_id in _answers(state, action, _enforce_arguments(action, state, settings.max_events))
+    )
+    if not does_the_same and remaining <= open_question_count(state.questions, state.context) + 1:
+        return "The remaining tool calls are reserved for open playbook questions and finishing"
+    if fallback.tool == "finish":
+        return None
+    if action.tool == "finish":
+        return "The model tried to finish with questions still open"
+    if action.tool == "expand_time_window":
+        return None
+    arguments = _enforce_arguments(action, state, settings.max_events)
+    if not any(arguments.get(key) for key in ("user", "host", "iocs")):
+        return "The model proposed a query with no user, host, or indicator"
+    if _query_key(action, arguments) in state.executed:
+        return "The model repeated a query that already ran"
+    return None
 
 
 def _open_questions(state: RunState) -> list[str]:
     return [
         question.text
         for question in state.questions
-        if question.id not in state.context.answered and question.tool not in {"finish", "expand_time_window"}
+        if question.id not in state.context.answered and question.tool not in CONTROL_TOOLS
     ]
 
 
@@ -333,20 +376,26 @@ def _execute(investigation_id: str) -> dict:
         action, source = choose_action(fallback, summary, settings)
         if action is None:
             return _finalize(state, "completed", "completed")
+        details = {}
+        if source == "llm":
+            reason = _override_reason(state, action, fallback, settings)
+            if reason is not None:
+                details = {"override_reason": reason, "proposed_tool": action.tool}
+                action, source = fallback, "playbook_override"
         _audit(
             state,
             "planner",
             f"Next action is {action.tool}",
-            {"source": source, "question": action.question, "question_id": action.question_id},
+            {"source": source, "question": action.question, "question_id": action.question_id, **details},
         )
         arguments = _enforce_arguments(action, state, settings.max_events)
+        answers = _answers(state, action, arguments)
         started_at = utc_iso(utc_now())
 
         if action.tool == "expand_time_window" and state.expansions >= settings.max_window_expansions:
             _record_step(state, action, arguments, "rejected", started_at)
             state.tool_calls += 1
             _audit(state, "tool_call", "Time window expansion was rejected because the budget is spent", {})
-            _mark_answered(state, action)
             _snapshot(state, status="running", stop_reason=None)
             continue
 
@@ -376,6 +425,7 @@ def _execute(investigation_id: str) -> dict:
         added = 0
         if outcome["kind"] == "query":
             state.query_seq += 1
+            state.executed.add(_query_key(action, arguments))
             query_id = f"qry-{state.query_seq:04d}"
             result = outcome["result"]
             source_name = result["source"]
@@ -404,9 +454,9 @@ def _execute(investigation_id: str) -> dict:
                         "External threat intelligence is enabled but v1 has no external provider; the local scenario feed was used",
                         {},
                     )
-            if added == 0 and not state.evidence and action.question_id:
+            if added == 0 and not state.evidence and answers:
                 state.context.needs_expansion = True
-                state.context.empty_question_ids.add(action.question_id)
+                state.context.empty_question_ids.update(answers)
             _audit(
                 state,
                 "tool_result",
@@ -421,7 +471,7 @@ def _execute(investigation_id: str) -> dict:
         else:
             _audit(state, "tool_result", "Planner finished the question list", {})
 
-        _mark_answered(state, action)
+        state.context.answered.update(answers)
         if action.tool == "finish":
             return _finalize(state, "completed", "completed")
         _snapshot(state, status="running", stop_reason=None)

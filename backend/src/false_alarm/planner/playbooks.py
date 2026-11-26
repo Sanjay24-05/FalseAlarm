@@ -20,6 +20,9 @@ _OUTBOUND_WORDS = {"outbound", "exfil", "exfiltration", "beacon", "c2"}
 _PREFERENCE = {"authentication": 3, "malware": 2, "outbound": 1, "generic": 0}
 
 
+CONTROL_TOOLS = frozenset({"finish", "expand_time_window"})
+
+
 @dataclass(frozen=True)
 class QuestionTemplate:
     id: str
@@ -167,6 +170,35 @@ def _available(question: QuestionTemplate, context: Context, expansions: int, ma
     if question.requires_any and not any(context.known(key) for key in question.requires_any):
         return False
     return True
+
+
+def _covers(arguments: dict, wanted: dict) -> bool:
+    """Filters are alternatives, so a query covers another when it includes every one of its filters."""
+    for key in ("user", "host"):
+        if wanted.get(key) and str(arguments.get(key) or "").casefold() != str(wanted[key]).casefold():
+            return False
+    have = {str(item).casefold() for item in arguments.get("iocs") or []}
+    return {str(item).casefold() for item in wanted.get("iocs") or []} <= have
+
+
+def covered_questions(
+    questions: list[QuestionTemplate], context: Context, tool: str, arguments: dict, start: datetime, end: datetime
+) -> list[str]:
+    """Open questions that this query answers at least as fully as the playbook's own query would."""
+    covered = []
+    for question in questions:
+        if question.tool != tool or question.tool in CONTROL_TOOLS or not _available(question, context, 0, 0):
+            continue
+        wanted = build_arguments(question, context, start, end, 0)
+        if any(wanted.get(key) for key in ("user", "host", "iocs")) and _covers(arguments, wanted):
+            covered.append(question.id)
+    return covered
+
+
+def open_question_count(questions: list[QuestionTemplate], context: Context) -> int:
+    return sum(
+        1 for question in questions if question.tool not in CONTROL_TOOLS and _available(question, context, 0, 0)
+    )
 
 
 def next_question(

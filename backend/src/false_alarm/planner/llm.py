@@ -72,6 +72,8 @@ def parse_action(content: str) -> ToolAction:
     data = json.loads(text)
     if not isinstance(data, dict):
         raise ValueError("Planner response must be a JSON object")
+    # Which question an action answers is decided from the query itself, never from the model.
+    data.pop("question_id", None)
     return ToolAction.model_validate(data)
 
 
