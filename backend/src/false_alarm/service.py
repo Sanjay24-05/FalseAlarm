@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from false_alarm.db import get_alert_row, get_investigation, latest_verdicts, list_alert_rows
+from false_alarm.db import (
+    get_alert_row,
+    get_investigation,
+    latest_verdicts,
+    list_alert_rows,
+    list_investigations_for_alert,
+)
 from false_alarm.errors import ScenarioNotFound
 from false_alarm.ingest import IngestResult, ingest_alert
 from false_alarm.agent.loop import execute_investigation, run_investigation, start_investigation
@@ -15,10 +21,11 @@ def load_scenario(scenario_id: str) -> IngestResult:
 
 
 def list_alert_summaries() -> list[dict]:
-    verdicts = latest_verdicts()
+    latest = latest_verdicts()
     summaries = []
     for row in list_alert_rows():
         alert = row["alert"]
+        investigation_id, verdict = latest.get(alert["id"], (None, None))
         summaries.append(
             {
                 "id": alert["id"],
@@ -29,7 +36,8 @@ def list_alert_summaries() -> list[dict]:
                 "username": alert["username"],
                 "hostname": alert["hostname"],
                 "src_ip": alert["src_ip"],
-                "verdict": verdicts.get(alert["id"]),
+                "verdict": verdict,
+                "latest_investigation_id": investigation_id,
             }
         )
     summaries.sort(key=lambda item: item["detected_at"], reverse=True)
@@ -43,8 +51,15 @@ def get_alert_view(alert_id: str) -> dict | None:
     return {"alert": row["alert"], "warnings": row.get("warnings") or []}
 
 
+def alert_investigations(alert_id: str) -> list[dict] | None:
+    if get_alert_row(alert_id) is None:
+        return None
+    return list_investigations_for_alert(alert_id)
+
+
 __all__ = [
     "IngestResult",
+    "alert_investigations",
     "ScenarioNotFound",
     "execute_investigation",
     "get_alert_view",

@@ -55,6 +55,17 @@ describe("AlertQueuePage", () => {
     expect(screen.getByText("Confirmed threat")).toBeTruthy();
   });
 
+  it("links the verdict to the investigation it came from", async () => {
+    api((path) =>
+      path === "/api/alerts"
+        ? [200, { alerts: [{ ...ALERT, latest_investigation_id: "inv-7" }] }]
+        : [200, { scenarios: [] }],
+    );
+    renderQueue();
+    const verdict = await screen.findByRole("link", { name: /Confirmed threat/ });
+    expect(verdict.getAttribute("href")).toBe("/investigations/inv-7");
+  });
+
   it("shows an error with a retry that reloads the list", async () => {
     let failing = true;
     const fetch = api((path) => {

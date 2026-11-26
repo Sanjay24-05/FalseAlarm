@@ -9,6 +9,7 @@ import type {
   IngestResult,
   Investigation,
   InvestigationStep,
+  InvestigationSummary,
   Ioc,
   Report,
   Scenario,
@@ -142,6 +143,19 @@ export function normalizeAlertListItem(value: unknown): AlertListItem {
     hostname: asString(record.hostname),
     src_ip: asString(record.src_ip),
     verdict: asNullableString(record.verdict),
+    latest_investigation_id: asNullableString(record.latest_investigation_id),
+  };
+}
+
+export function normalizeInvestigationSummary(value: unknown): InvestigationSummary {
+  const record = asRecord(value);
+  return {
+    id: asString(record.id),
+    status: asString(record.status) || "unknown",
+    stop_reason: asNullableString(record.stop_reason),
+    verdict: asNullableString(record.verdict),
+    created_at: asString(record.created_at),
+    updated_at: asString(record.updated_at),
   };
 }
 

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiError, createAlert, listAlerts, listScenarios, loadScenario, uploadAlerts } from "../api";
 import { ALERT_JSON_FIELDS, ALERT_JSON_SAMPLE, PRIMARY_SCENARIOS } from "../constants";
-import { alertPath, formatTimestamp } from "../lib/format";
+import { alertPath, formatTimestamp, investigationPath } from "../lib/format";
 import type { AlertListItem, AlertLocationState, FieldError, IngestResult, Scenario, UploadResult } from "../types";
 import {
   Button,
@@ -382,7 +382,17 @@ export function AlertQueuePage() {
                     <td className="whitespace-nowrap px-2 py-1.5 font-mono">{alert.hostname || "—"}</td>
                     <td className="whitespace-nowrap px-2 py-1.5 font-mono">{alert.src_ip || "—"}</td>
                     <td className="whitespace-nowrap px-2 py-1.5">
-                      <VerdictBadge verdict={alert.verdict} />
+                      {alert.latest_investigation_id ? (
+                        <Link
+                          to={investigationPath(alert.latest_investigation_id)}
+                          className="hover:opacity-80"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <VerdictBadge verdict={alert.verdict} />
+                        </Link>
+                      ) : (
+                        <VerdictBadge verdict={alert.verdict} />
+                      )}
                     </td>
                   </tr>
                 ))}

@@ -133,7 +133,7 @@ The offline demo runs with no key. If the model is enabled but the call fails or
 
 `POST /api/alerts/upload` reads a multipart field named `file`. The file is one JSON object or an array. The response is `200` and `{ "results": [ ... ] }`. A bad item is `{ "errors": [...] }` and does not fail the rest of the batch. An empty or non-JSON file is `422`.
 
-`GET /api/alerts` returns summaries. `verdict` is always present and is `null` until an investigation has assessed that alert. A stored alert includes a generated `id` and `iocs` as `{ "type", "value" }` objects. Warnings use the same `{ "field", "message" }` shape as errors.
+`GET /api/alerts` returns summaries. `verdict` is always present and is `null` until an investigation has assessed that alert. `latest_investigation_id` is the run that verdict came from, or the latest run when none has a verdict, or `null`. `GET /api/alerts/{id}/investigations` lists an alert's runs, newest first, as `{ "id", "status", "stop_reason", "verdict", "created_at", "updated_at" }`; an unknown alert is `404`. A stored alert includes a generated `id` and `iocs` as `{ "type", "value" }` objects. Warnings use the same `{ "field", "message" }` shape as errors.
 
 `POST /api/investigations` with `{ "alert_id": "..." }` returns `202` and `{ "id", "status": "running" }`. `GET /api/investigations/{id}` is the document the console polls.
 

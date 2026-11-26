@@ -119,25 +119,61 @@ def list_alert_rows() -> list[dict[str, Any]]:
     return [_loads(row["document"]) for row in rows]
 
 
-def latest_verdicts() -> dict[str, str]:
+def _verdict(document: dict[str, Any]) -> str | None:
+    verdict = (document.get("assessment") or {}).get("verdict")
+    return verdict if isinstance(verdict, str) and verdict else None
+
+
+def latest_verdicts() -> dict[str, tuple[str, str | None]]:
+    """For each alert with a run: the run its queue verdict comes from, and that verdict.
+
+    That is the most recently updated run with a verdict, or the most recent run when none has one.
+    """
     connection = connect()
     try:
         rows = connection.execute(
-            "SELECT alert_id, document FROM investigations ORDER BY updated_at DESC"
+            "SELECT id, alert_id, document FROM investigations ORDER BY updated_at DESC, rowid DESC"
         ).fetchall()
     finally:
         connection.close()
-    verdicts: dict[str, str] = {}
+    latest: dict[str, tuple[str, str | None]] = {}
     for row in rows:
-        alert_id = row["alert_id"]
-        if alert_id in verdicts:
+        current = latest.get(row["alert_id"])
+        if current is not None and current[1] is not None:
             continue
+        verdict = _verdict(_loads(row["document"]))
+        if current is None or verdict is not None:
+            latest[row["alert_id"]] = (row["id"], verdict)
+    return latest
+
+
+def list_investigations_for_alert(alert_id: str) -> list[dict[str, Any]]:
+    """Summaries of an alert's runs, newest first."""
+    connection = connect()
+    try:
+        rows = connection.execute(
+            """
+            SELECT id, status, document, created_at, updated_at FROM investigations
+            WHERE alert_id = ? ORDER BY created_at DESC, rowid DESC
+            """,
+            (alert_id,),
+        ).fetchall()
+    finally:
+        connection.close()
+    summaries = []
+    for row in rows:
         document = _loads(row["document"])
-        assessment = document.get("assessment") or {}
-        verdict = assessment.get("verdict")
-        if isinstance(verdict, str) and verdict:
-            verdicts[alert_id] = verdict
-    return verdicts
+        summaries.append(
+            {
+                "id": row["id"],
+                "status": row["status"],
+                "stop_reason": document.get("stop_reason"),
+                "verdict": _verdict(document),
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+            }
+        )
+    return summaries
 
 
 def running_investigation_ids() -> list[str]:

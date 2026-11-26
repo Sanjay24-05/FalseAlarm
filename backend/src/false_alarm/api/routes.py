@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict
 
 from false_alarm.errors import AlertNotFound, ScenarioNotFound
 from false_alarm.service import (
+    alert_investigations,
     execute_investigation,
     get_alert_view,
     get_investigation,
@@ -110,6 +111,14 @@ def get_alert(alert_id: str) -> dict:
     if view is None:
         raise HTTPException(status_code=404, detail="Alert not found")
     return view
+
+
+@router.get("/alerts/{alert_id}/investigations")
+def get_alert_investigations(alert_id: str) -> dict:
+    investigations = alert_investigations(alert_id)
+    if investigations is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return {"investigations": investigations}
 
 
 @router.get("/scenarios")

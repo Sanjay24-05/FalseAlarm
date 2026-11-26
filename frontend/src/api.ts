@@ -1,10 +1,20 @@
-import type { AlertDetail, AlertListItem, FieldError, IngestResult, Investigation, Scenario, UploadResult } from "./types";
+import type {
+  AlertDetail,
+  AlertListItem,
+  FieldError,
+  IngestResult,
+  Investigation,
+  InvestigationSummary,
+  Scenario,
+  UploadResult,
+} from "./types";
 import {
   normalizeAlertDetail,
   normalizeAlertListItem,
   normalizeFieldMessages,
   normalizeIngest,
   normalizeInvestigation,
+  normalizeInvestigationSummary,
   normalizeScenario,
   normalizeUploadResult,
   requireRecord,
@@ -106,6 +116,17 @@ export async function getAlert(id: string): Promise<{ alert: AlertDetail; warnin
   const alert = normalizeAlertDetail(data.alert);
   const warnings = uniqueFieldErrors([...normalizeFieldMessages(data.warnings), ...alert.warnings]);
   return { alert: { ...alert, warnings }, warnings };
+}
+
+export async function listAlertInvestigations(id: string): Promise<InvestigationSummary[]> {
+  const data = requireRecord(
+    await request(`/api/alerts/${encodeURIComponent(id)}/investigations`),
+    "GET /api/alerts/{id}/investigations",
+  );
+  if (!Array.isArray(data.investigations)) {
+    throw new Error("Unexpected response from GET /api/alerts/{id}/investigations.");
+  }
+  return data.investigations.map(normalizeInvestigationSummary);
 }
 
 export async function createAlert(body: unknown): Promise<IngestResult> {

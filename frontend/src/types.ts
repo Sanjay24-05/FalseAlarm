@@ -18,6 +18,17 @@ export interface AlertListItem {
   hostname: string;
   src_ip: string;
   verdict: string | null;
+  /** The run the verdict came from, or the latest run when none has a verdict. */
+  latest_investigation_id: string | null;
+}
+
+export interface InvestigationSummary {
+  id: string;
+  status: string;
+  stop_reason: string | null;
+  verdict: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface AlertDetail {
