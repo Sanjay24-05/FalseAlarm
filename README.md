@@ -66,11 +66,13 @@ cd backend
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-Console typecheck:
+Console tests, lint, and typecheck:
 
 ```powershell
 cd frontend
-npx tsc --noEmit
+npm test
+npm run lint
+npm run typecheck
 ```
 
 ## Offline demo
