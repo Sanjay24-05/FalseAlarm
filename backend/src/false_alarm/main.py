@@ -8,11 +8,14 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 
 from false_alarm.api.routes import router
 from false_alarm.agent.loop import recover_interrupted
 from false_alarm.db import init_db
+from false_alarm.security import RequestGuard
+from false_alarm.settings import get_settings
 
 
 @asynccontextmanager
@@ -32,14 +35,20 @@ async def _validation_errors(_request: Request, exc: RequestValidationError) -> 
 
 
 def create_app() -> FastAPI:
+    settings = get_settings()
     application = FastAPI(title="False Alarm", lifespan=_lifespan)
+    # The last middleware added runs first: Host check, then CORS (which answers preflights), then the guard.
+    application.add_middleware(
+        RequestGuard, allowed_origins=settings.allowed_origins, api_token=settings.api_token
+    )
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=settings.allowed_origins,
+        allow_credentials=False,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type", "Authorization"],
     )
+    application.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
     application.add_exception_handler(RequestValidationError, _validation_errors)
     application.include_router(router, prefix="/api")
     return application

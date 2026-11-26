@@ -127,6 +127,16 @@ The planner calls a model only when all of these are set. `FALSE_ALARM_LLM_ENABL
 
 The offline demo runs with no key. If the model is enabled but the call fails or the JSON is not an allowlisted tool, the playbook action is used. Each call's timeout is the smaller of 20 seconds and the time left in the run's budget, and no call starts once the budget is spent. A failed call is logged and recorded in the audit trail by exception type only, never with the key, URL, or model text.
 
+## Access
+
+The API listens on `127.0.0.1` and is meant for the analyst's own machine. Because any web page the analyst opens can send requests there, the API refuses:
+
+- a `Host` header other than `FALSE_ALARM_ALLOWED_HOSTS` (default `127.0.0.1,localhost`), with `400`, which blocks DNS rebinding;
+- a `POST` whose `Origin` is not in `FALSE_ALARM_ALLOWED_ORIGINS` (default `http://localhost:5173,http://127.0.0.1:5173`), with `403`. Requests with no `Origin`, such as `curl`, are allowed;
+- an alert body sent to `POST /api/alerts` without `Content-Type: application/json`, with `415`.
+
+Set `FALSE_ALARM_API_TOKEN` to also require `Authorization: Bearer <token>` on every request, including `/docs`; a missing or wrong token is `401`. When it is set in the console's environment too, the Vite dev proxy adds the header, so the token never reaches the browser. Without a token, anyone who can reach the port can use the API, so set one before listening on any other address.
+
 ## HTTP contract
 
 `POST /api/alerts` accepts one JSON object. A new alert is `201`. The same fingerprint is `200` with `duplicate: true`. Validation failure is `422` and the body is `{ "errors": [{ "field": "...", "message": "..." }] }` with no `detail` wrapper. `404` responses use `{ "detail": "..." }`.

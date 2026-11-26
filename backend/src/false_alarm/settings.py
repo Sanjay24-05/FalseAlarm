@@ -18,6 +18,13 @@ def _flag(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _list(name: str, default: str) -> list[str]:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        raw = default
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
 def _number(name: str, default: int) -> int:
     raw = os.environ.get(name)
     if raw is None or not raw.strip():
@@ -40,6 +47,9 @@ class Settings(BaseModel):
     max_seconds: int
     window_before_minutes: int
     window_after_minutes: int
+    allowed_hosts: list[str]
+    allowed_origins: list[str]
+    api_token: str
 
     def llm_configured(self) -> bool:
         return bool(
@@ -67,4 +77,7 @@ def get_settings() -> Settings:
         max_seconds=_number("FALSE_ALARM_MAX_SECONDS", 60),
         window_before_minutes=_number("FALSE_ALARM_WINDOW_BEFORE_MINUTES", 240),
         window_after_minutes=_number("FALSE_ALARM_WINDOW_AFTER_MINUTES", 120),
+        allowed_hosts=_list("FALSE_ALARM_ALLOWED_HOSTS", "127.0.0.1,localhost"),
+        allowed_origins=_list("FALSE_ALARM_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"),
+        api_token=os.environ.get("FALSE_ALARM_API_TOKEN", "").strip(),
     )
