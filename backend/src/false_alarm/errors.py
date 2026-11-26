@@ -21,3 +21,11 @@ class UnknownToolError(Exception):
     def __init__(self, name: str) -> None:
         self.name = name
         super().__init__(f"Unknown tool: {name}")
+
+
+class UnscopedQueryError(Exception):
+    """Raised when a query names no user, host, or indicator. It would match every record."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        super().__init__(f"Unscoped query: {name}")

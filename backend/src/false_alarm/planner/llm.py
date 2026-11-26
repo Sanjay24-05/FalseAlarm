@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
+import time
 
 import httpx
 
 from false_alarm.planner.actions import ToolAction
 from false_alarm.settings import Settings
+
+logger = logging.getLogger("false_alarm.planner")
+_CALL_TIMEOUT = 20.0
+# Below this many seconds a call cannot finish usefully, so none is started.
+_MIN_CALL_SECONDS = 0.05
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
 _SYSTEM = (
@@ -45,7 +52,7 @@ def bounded_summary(alert: dict, evidence: list[dict], open_questions: list[str]
     return "\n".join(lines)[:6000]
 
 
-def chat_complete(summary: str, settings: Settings) -> str:
+def chat_complete(summary: str, settings: Settings, *, timeout: float = _CALL_TIMEOUT) -> str:
     url = settings.llm_base_url.rstrip("/")
     if not url.endswith("/chat/completions"):
         url = f"{url}/chat/completions"
@@ -58,7 +65,7 @@ def chat_complete(summary: str, settings: Settings) -> str:
         ],
     }
     headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
-    with httpx.Client(timeout=20.0) as client:
+    with httpx.Client(timeout=timeout) as client:
         response = client.post(url, json=payload, headers=headers)
         response.raise_for_status()
         body = response.json()
@@ -72,24 +79,44 @@ def parse_action(content: str) -> ToolAction:
     data = json.loads(text)
     if not isinstance(data, dict):
         raise ValueError("Planner response must be a JSON object")
+    # Which question an action answers is decided from the query itself, never from the model.
+    data.pop("question_id", None)
     return ToolAction.model_validate(data)
 
 
-def propose_with_llm(summary: str, settings: Settings) -> ToolAction | None:
-    """Try twice. A schema or tool-name failure returns None so the caller can use the playbook."""
+def propose_with_llm(
+    summary: str, settings: Settings, *, deadline: float | None = None, errors: list[str] | None = None
+) -> ToolAction | None:
+    """Try twice within the deadline (a time.monotonic() value).
+
+    Any failure returns None so the caller can use the playbook. Failures are recorded by exception type only:
+    messages can carry the endpoint URL, the key, or the model's text.
+    """
+    errors = [] if errors is None else errors
     for _attempt in range(2):
+        timeout = _CALL_TIMEOUT
+        if deadline is not None:
+            timeout = min(timeout, deadline - time.monotonic())
+            if timeout < _MIN_CALL_SECONDS:
+                errors.append("DeadlineReached")
+                break
         try:
-            return parse_action(chat_complete(summary, settings))
-        except Exception:
-            continue
+            return parse_action(chat_complete(summary, settings, timeout=timeout))
+        except Exception as exc:
+            errors.append(type(exc).__name__)
+            logger.warning("Planner model call failed: %s", type(exc).__name__)
     return None
 
 
-def choose_action(fallback: ToolAction | None, summary: str, settings: Settings) -> tuple[ToolAction | None, str]:
+def choose_action(
+    fallback: ToolAction | None, summary: str, settings: Settings, *, deadline: float | None = None
+) -> tuple[ToolAction | None, str, list[str]]:
+    """The next action, where it came from, and the model failures on the way."""
+    errors: list[str] = []
     if settings.llm_configured():
-        proposed = propose_with_llm(summary, settings)
+        proposed = propose_with_llm(summary, settings, deadline=deadline, errors=errors)
         if proposed is not None:
-            return proposed, "llm"
+            return proposed, "llm", errors
         if fallback is not None:
-            return fallback, "playbook_fallback"
-    return fallback, "playbook"
+            return fallback, "playbook_fallback", errors
+    return fallback, "playbook", errors

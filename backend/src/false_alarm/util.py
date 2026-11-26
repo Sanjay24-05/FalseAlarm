@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 from datetime import datetime, timezone
 from typing import Iterable
 
@@ -25,7 +26,10 @@ def parse_datetime(value: str) -> datetime:
     parsed = datetime.fromisoformat(text)
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+    try:
+        return parsed.astimezone(timezone.utc)
+    except OverflowError as exc:
+        raise ValueError("timestamp is out of range") from exc
 
 
 def minute_bucket(value: datetime) -> str:
@@ -90,3 +94,11 @@ def unique_strings(items: Iterable[str | None]) -> list[str]:
         seen.add(key)
         ordered.append(text)
     return ordered
+
+
+_CITATION_RE = re.compile(r"\bev-(?=\d{4})")
+
+
+def defang_citations(text: str) -> str:
+    """Rewrite text copied from an alert or a log so it cannot read as an evidence citation."""
+    return _CITATION_RE.sub("ev[-]", text)

@@ -20,6 +20,9 @@ _OUTBOUND_WORDS = {"outbound", "exfil", "exfiltration", "beacon", "c2"}
 _PREFERENCE = {"authentication": 3, "malware": 2, "outbound": 1, "generic": 0}
 
 
+CONTROL_TOOLS = frozenset({"finish", "expand_time_window"})
+
+
 @dataclass(frozen=True)
 class QuestionTemplate:
     id: str
@@ -169,6 +172,35 @@ def _available(question: QuestionTemplate, context: Context, expansions: int, ma
     return True
 
 
+def _covers(arguments: dict, wanted: dict) -> bool:
+    """Filters are alternatives, so a query covers another when it includes every one of its filters."""
+    for key in ("user", "host"):
+        if wanted.get(key) and str(arguments.get(key) or "").casefold() != str(wanted[key]).casefold():
+            return False
+    have = {str(item).casefold() for item in arguments.get("iocs") or []}
+    return {str(item).casefold() for item in wanted.get("iocs") or []} <= have
+
+
+def covered_questions(
+    questions: list[QuestionTemplate], context: Context, tool: str, arguments: dict, start: datetime, end: datetime
+) -> list[str]:
+    """Open questions that this query answers at least as fully as the playbook's own query would."""
+    covered = []
+    for question in questions:
+        if question.tool != tool or question.tool in CONTROL_TOOLS or not _available(question, context, 0, 0):
+            continue
+        wanted = build_arguments(question, context, start, end, 0)
+        if any(wanted.get(key) for key in ("user", "host", "iocs")) and _covers(arguments, wanted):
+            covered.append(question.id)
+    return covered
+
+
+def open_question_count(questions: list[QuestionTemplate], context: Context) -> int:
+    return sum(
+        1 for question in questions if question.tool not in CONTROL_TOOLS and _available(question, context, 0, 0)
+    )
+
+
 def next_question(
     questions: list[QuestionTemplate],
     context: Context,
@@ -217,6 +249,9 @@ def build_arguments(
             args["iocs"] = sorted(context.hashes)
         if question.tool == "query_dns" and context.domains:
             args["iocs"] = sorted(context.domains)
+        # Without a host, records that carry only an address are reachable only through the source IP.
+        if not context.hostname and context.src_ip:
+            args["iocs"] = unique_strings([*args.get("iocs", []), context.src_ip])
         return args
     if question.tool == "expand_time_window":
         return {"start": args["start"], "end": args["end"]}

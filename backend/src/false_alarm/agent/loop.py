@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import timedelta
 from uuid import uuid4
@@ -13,15 +15,29 @@ from false_alarm.agent.observe import event_fingerprint, make_observation, unkno
 from false_alarm.agent.tools import execute_tool
 from false_alarm.assessment.rules import assess
 from false_alarm.correlation.engine import build_timeline
-from false_alarm.db import get_alert_row, get_investigation, insert_investigation, update_investigation
+from false_alarm.db import (
+    get_alert_row,
+    get_investigation,
+    insert_investigation,
+    running_investigation_ids,
+    update_investigation,
+)
 from false_alarm.domain.models import InvestigationDocument
-from false_alarm.errors import AlertNotFound, UnknownToolError
+from false_alarm.errors import AlertNotFound, UnknownToolError, UnscopedQueryError
 from false_alarm.planner.actions import ToolAction
 from false_alarm.planner.llm import bounded_summary, choose_action
-from false_alarm.planner.playbooks import QuestionTemplate, playbook_action, questions_for, select_playbook
+from false_alarm.planner.playbooks import (
+    CONTROL_TOOLS,
+    QuestionTemplate,
+    covered_questions,
+    open_question_count,
+    playbook_action,
+    questions_for,
+    select_playbook,
+)
 from false_alarm.reports.render import compose_report
 from false_alarm.scenarios import get_catalog
-from false_alarm.settings import get_settings
+from false_alarm.settings import Settings, get_settings
 from false_alarm.util import parse_datetime, utc_iso, utc_now
 
 logger = logging.getLogger("false_alarm.agent")
@@ -41,6 +57,8 @@ class RunState:
     steps: list[dict] = field(default_factory=list)
     audit: list[dict] = field(default_factory=list)
     seen: set[str] = field(default_factory=set)
+    executed: set[str] = field(default_factory=set)
+    truncated: set[str] = field(default_factory=set)
     tool_calls: int = 0
     evidence_seq: int = 0
     query_seq: int = 0
@@ -95,7 +113,7 @@ def _snapshot(
 
 
 def _enforce_arguments(action: ToolAction, state: RunState, limit: int) -> dict:
-    if action.tool in {"finish", "expand_time_window"}:
+    if action.tool in CONTROL_TOOLS:
         if action.tool == "expand_time_window":
             return {"start": utc_iso(state.window_start), "end": utc_iso(state.window_end)}
         return {}
@@ -105,21 +123,28 @@ def _enforce_arguments(action: ToolAction, state: RunState, limit: int) -> dict:
         "limit": limit,
     }
     supplied = action.arguments or {}
-    if supplied.get("user"):
-        arguments["user"] = str(supplied["user"])
-    if supplied.get("host"):
-        arguments["host"] = str(supplied["host"])
+    for key in ("user", "host"):
+        value = supplied.get(key)
+        if isinstance(value, str) and value.strip():
+            arguments[key] = value.strip()
     iocs = supplied.get("iocs") or []
     if isinstance(iocs, str):
         iocs = [iocs]
-    cleaned = [str(item) for item in iocs if item]
+    if not isinstance(iocs, list):
+        iocs = []
+    cleaned = [item.strip() for item in iocs if isinstance(item, str) and item.strip()]
     if cleaned:
         arguments["iocs"] = cleaned
     return arguments
 
 
-def _remember(state: RunState, source_type: str, event: dict, query_id: str, source: str) -> dict | None:
-    key = event_fingerprint(source_type, event)
+def _remember(
+    state: RunState, source_type: str, event: dict, query_id: str, source: str, repeats: Counter[str]
+) -> dict | None:
+    """Store a record once across queries. Identical rows within one query result are separate records."""
+    fingerprint = event_fingerprint(source_type, event)
+    repeats[fingerprint] += 1
+    key = fingerprint if source_type == "threat_intel" else f"{fingerprint}#{repeats[fingerprint]}"
     if key in state.seen:
         return None
     state.seen.add(key)
@@ -147,23 +172,54 @@ def _expand(state: RunState) -> None:
     state.context.needs_expansion = False
 
 
-def _mark_answered(state: RunState, action: ToolAction) -> None:
+def _answers(state: RunState, action: ToolAction, arguments: dict) -> list[str]:
+    """Questions this action answers. The playbook names its own; a model's query has to earn them."""
     if action.tool == "expand_time_window":
-        return
+        return []
     if action.question_id:
-        state.context.answered.add(action.question_id)
-        return
-    for question in state.questions:
-        if question.tool == action.tool and question.id not in state.context.answered:
-            state.context.answered.add(question.id)
-            return
+        return [action.question_id]
+    return covered_questions(
+        state.questions, state.context, action.tool, arguments, state.window_start, state.window_end
+    )
+
+
+def _query_key(action: ToolAction, arguments: dict) -> str:
+    filters = {key: value for key, value in arguments.items() if key != "limit"}
+    return json.dumps([action.tool, filters], sort_keys=True).casefold()
+
+
+def _override_reason(
+    state: RunState, action: ToolAction, fallback: ToolAction | None, settings: Settings
+) -> str | None:
+    """Why a model's proposal must give way to the playbook, or None when it may run."""
+    if fallback is None:
+        return None
+    remaining = settings.max_tool_calls - state.tool_calls
+    does_the_same = action.tool == fallback.tool and (
+        action.tool == "finish"
+        or fallback.question_id in _answers(state, action, _enforce_arguments(action, state, settings.max_events))
+    )
+    if not does_the_same and remaining <= open_question_count(state.questions, state.context) + 1:
+        return "The remaining tool calls are reserved for open playbook questions and finishing"
+    if fallback.tool == "finish":
+        return None
+    if action.tool == "finish":
+        return "The model tried to finish with questions still open"
+    if action.tool == "expand_time_window":
+        return None
+    arguments = _enforce_arguments(action, state, settings.max_events)
+    if not any(arguments.get(key) for key in ("user", "host", "iocs")):
+        return "The model proposed a query with no user, host, or indicator"
+    if _query_key(action, arguments) in state.executed:
+        return "The model repeated a query that already ran"
+    return None
 
 
 def _open_questions(state: RunState) -> list[str]:
     return [
         question.text
         for question in state.questions
-        if question.id not in state.context.answered and question.tool not in {"finish", "expand_time_window"}
+        if question.id not in state.context.answered and question.tool not in CONTROL_TOOLS
     ]
 
 
@@ -189,6 +245,7 @@ def _finalize(state: RunState, status: str, stop_reason: str) -> dict:
         get_catalog(),
         _open_questions(state),
         answered_questions=set(state.context.answered),
+        truncated=sorted(state.truncated),
     )
     _audit(
         state,
@@ -237,34 +294,49 @@ def start_investigation(alert_id: str) -> dict:
         ],
     }
     InvestigationDocument.model_validate(document)
-    insert_investigation(document)
-    return {"id": investigation_id, "status": "running"}
+    running = insert_investigation(document)
+    if running is not None:
+        return {"id": running, "status": "running", "created": False}
+    return {"id": investigation_id, "status": "running", "created": True}
+
+
+def _fail(investigation_id: str, stop_reason: str, summary: str, details: dict) -> None:
+    existing = get_investigation(investigation_id)
+    if existing is None:
+        return
+    existing["status"] = "failed"
+    existing["stop_reason"] = stop_reason
+    audit = list(existing.get("audit") or [])
+    audit.append(
+        {
+            "id": f"au-{len(audit) + 1:04d}",
+            "kind": "error",
+            "timestamp": utc_iso(utc_now()),
+            "summary": summary,
+            "details": details,
+        }
+    )
+    existing["audit"] = audit
+    InvestigationDocument.model_validate(existing)
+    update_investigation(existing)
+
+
+def recover_interrupted() -> list[str]:
+    """Fail runs a previous process left running. Call once at startup, before any run begins."""
+    ids = running_investigation_ids()
+    for investigation_id in ids:
+        _fail(investigation_id, "interrupted", "Investigation was interrupted when the service stopped", {})
+    return ids
 
 
 def execute_investigation(investigation_id: str) -> dict:
     try:
         return _execute(investigation_id)
     except Exception as exc:
-        existing = get_investigation(investigation_id)
-        if existing is not None:
-            existing["status"] = "failed"
-            existing["stop_reason"] = "failed"
-            audit = list(existing.get("audit") or [])
-            audit.append(
-                {
-                    "id": f"au-{len(audit) + 1:04d}",
-                    "kind": "error",
-                    "timestamp": utc_iso(utc_now()),
-                    "summary": "Investigation failed",
-                    "details": {"error": str(exc)},
-                }
-            )
-            existing["audit"] = audit
-            try:
-                InvestigationDocument.model_validate(existing)
-                update_investigation(existing)
-            except Exception:
-                logger.exception("Could not persist the failed investigation")
+        try:
+            _fail(investigation_id, "failed", "Investigation failed", {"error": str(exc)})
+        except Exception:
+            logger.exception("Could not persist the failed investigation")
         logger.exception("Investigation %s failed", investigation_id)
         raise
 
@@ -322,23 +394,30 @@ def _execute(investigation_id: str) -> dict:
             settings.max_window_expansions,
         )
         summary = bounded_summary(alert, state.evidence, _open_questions(state))
-        action, source = choose_action(fallback, summary, settings)
+        deadline = time.monotonic() + settings.max_seconds - (time.perf_counter() - state.started)
+        action, source, llm_errors = choose_action(fallback, summary, settings, deadline=deadline)
         if action is None:
             return _finalize(state, "completed", "completed")
+        details: dict = {"llm_errors": llm_errors} if llm_errors else {}
+        if source == "llm":
+            reason = _override_reason(state, action, fallback, settings)
+            if reason is not None:
+                details.update({"override_reason": reason, "proposed_tool": action.tool})
+                action, source = fallback, "playbook_override"
         _audit(
             state,
             "planner",
             f"Next action is {action.tool}",
-            {"source": source, "question": action.question, "question_id": action.question_id},
+            {"source": source, "question": action.question, "question_id": action.question_id, **details},
         )
         arguments = _enforce_arguments(action, state, settings.max_events)
+        answers = _answers(state, action, arguments)
         started_at = utc_iso(utc_now())
 
         if action.tool == "expand_time_window" and state.expansions >= settings.max_window_expansions:
             _record_step(state, action, arguments, "rejected", started_at)
             state.tool_calls += 1
             _audit(state, "tool_call", "Time window expansion was rejected because the budget is spent", {})
-            _mark_answered(state, action)
             _snapshot(state, status="running", stop_reason=None)
             continue
 
@@ -356,17 +435,27 @@ def _execute(investigation_id: str) -> dict:
             state.tool_calls += 1
             _audit(state, "tool_call", f"Rejected unknown tool {exc.name}", {"tool": exc.name})
             return _snapshot(state, status="failed", stop_reason="unknown_tool")
+        except UnscopedQueryError as exc:
+            _record_step(state, action, arguments, "rejected", started_at)
+            state.tool_calls += 1
+            _audit(state, "tool_call", f"Rejected {exc.name} because it named no user, host, or indicator", {})
+            _snapshot(state, status="running", stop_reason=None)
+            continue
 
         state.tool_calls += 1
         _record_step(state, action, arguments, "completed", started_at)
         added = 0
         if outcome["kind"] == "query":
             state.query_seq += 1
+            state.executed.add(_query_key(action, arguments))
             query_id = f"qry-{state.query_seq:04d}"
             result = outcome["result"]
             source_name = result["source"]
+            if result["truncated"]:
+                state.truncated.add(outcome["source_type"])
+            repeats: Counter[str] = Counter()
             for event in outcome["events"]:
-                if _remember(state, outcome["source_type"], event, query_id, source_name) is not None:
+                if _remember(state, outcome["source_type"], event, query_id, source_name, repeats) is not None:
                     added += 1
             if outcome["source_type"] == "threat_intel":
                 found = {
@@ -378,7 +467,7 @@ def _execute(investigation_id: str) -> dict:
                     if str(indicator).casefold() in found:
                         continue
                     miss = unknown_reputation_event(str(indicator), result["timestamp"])
-                    if _remember(state, "threat_intel", miss, query_id, source_name) is not None:
+                    if _remember(state, "threat_intel", miss, query_id, source_name, repeats) is not None:
                         added += 1
                 if settings.external_ti_enabled:
                     _audit(
@@ -387,9 +476,9 @@ def _execute(investigation_id: str) -> dict:
                         "External threat intelligence is enabled but v1 has no external provider; the local scenario feed was used",
                         {},
                     )
-            if added == 0 and not state.evidence and action.question_id:
+            if added == 0 and not state.evidence and answers:
                 state.context.needs_expansion = True
-                state.context.empty_question_ids.add(action.question_id)
+                state.context.empty_question_ids.update(answers)
             _audit(
                 state,
                 "tool_result",
@@ -404,7 +493,7 @@ def _execute(investigation_id: str) -> dict:
         else:
             _audit(state, "tool_result", "Planner finished the question list", {})
 
-        _mark_answered(state, action)
+        state.context.answered.update(answers)
         if action.tool == "finish":
             return _finalize(state, "completed", "completed")
         _snapshot(state, status="running", stop_reason=None)
@@ -413,4 +502,6 @@ def _execute(investigation_id: str) -> dict:
 def run_investigation(alert_id: str) -> dict:
     """Run to completion on the calling thread. Tests and the API worker both use this path."""
     started = start_investigation(alert_id)
+    if not started["created"]:
+        return get_investigation(started["id"])
     return execute_investigation(started["id"])

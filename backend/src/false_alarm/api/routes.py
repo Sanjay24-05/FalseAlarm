@@ -39,7 +39,7 @@ async def create_alert(request: Request) -> JSONResponse:
         )
     try:
         payload = json.loads(raw)
-    except json.JSONDecodeError:
+    except (ValueError, RecursionError):
         return JSONResponse(
             status_code=422,
             content={"errors": [{"field": "body", "message": "Request body is not valid JSON"}]},
@@ -65,7 +65,7 @@ async def upload_alerts(file: UploadFile = File(...)) -> JSONResponse:
         )
     try:
         data = json.loads(raw.decode("utf-8-sig"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
+    except (ValueError, RecursionError):
         return JSONResponse(
             status_code=422,
             content={"errors": [{"field": "file", "message": "Upload is not valid JSON"}]},
@@ -134,7 +134,8 @@ def post_investigation(body: InvestigateRequest, background: BackgroundTasks) ->
         started = start_investigation(body.alert_id)
     except AlertNotFound:
         raise HTTPException(status_code=404, detail="Alert not found") from None
-    background.add_task(execute_investigation, started["id"])
+    if started["created"]:
+        background.add_task(execute_investigation, started["id"])
     return JSONResponse(status_code=202, content={"id": started["id"], "status": "running"})
 
 
