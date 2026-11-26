@@ -6,6 +6,7 @@ import json
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict
 
 from false_alarm.errors import AlertNotFound, ScenarioNotFound
@@ -50,7 +51,8 @@ async def create_alert(request: Request) -> JSONResponse:
             status_code=422,
             content={"errors": [{"field": "body", "message": "Alert payload must be a JSON object"}]},
         )
-    result = ingest_alert(payload)
+    # Ingest reads and writes SQLite; run it on a worker thread so the event loop keeps serving.
+    result = await run_in_threadpool(ingest_alert, payload)
     if result.errors:
         return JSONResponse(status_code=422, content={"errors": result.errors})
     return JSONResponse(status_code=result.status_code, content=result.public())
@@ -85,6 +87,10 @@ async def upload_alerts(file: UploadFile = File(...)) -> JSONResponse:
             status_code=422,
             content={"errors": [{"field": "file", "message": "Upload must be a JSON object or array"}]},
         )
+    return JSONResponse(status_code=200, content={"results": await run_in_threadpool(_ingest_batch, items)})
+
+
+def _ingest_batch(items: list) -> list[dict]:
     results = []
     for index, item in enumerate(items):
         if not isinstance(item, dict):
@@ -97,7 +103,7 @@ async def upload_alerts(file: UploadFile = File(...)) -> JSONResponse:
             results.append({"errors": result.errors})
         else:
             results.append(result.public())
-    return JSONResponse(status_code=200, content={"results": results})
+    return results
 
 
 @router.get("/alerts")

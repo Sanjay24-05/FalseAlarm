@@ -47,7 +47,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m uvicorn false_alarm.main:app --host 127.0.0.1 --port 8000
 ```
 
-The API listens on `http://127.0.0.1:8000`. Alerts and investigations are written to `backend/data/false_alarm.db` unless `FALSE_ALARM_DB_PATH` is set. Scenarios are read from `data/scenarios` unless `FALSE_ALARM_SCENARIOS_DIR` is set.
+The API listens on `http://127.0.0.1:8000`. Alerts and investigations are written to `backend/data/false_alarm.db` unless `FALSE_ALARM_DB_PATH` is set. The schema is versioned with SQLite's `user_version`; the first connection to a file applies any missing migrations, so an existing database upgrades in place. Scenarios are read from `data/scenarios` unless `FALSE_ALARM_SCENARIOS_DIR` is set.
 
 In another shell, start the console:
 
