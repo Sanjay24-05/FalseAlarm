@@ -111,7 +111,7 @@ The planner calls a model only when all of these are set. `FALSE_ALARM_LLM_ENABL
 | `FALSE_ALARM_LLM_API_KEY` | Bearer token for that endpoint. |
 | `FALSE_ALARM_LLM_MODEL` | Model name sent in the chat request. |
 
-The offline demo runs with no key. If the model is enabled but the call fails or the JSON is not an allowlisted tool, the playbook action is used.
+The offline demo runs with no key. If the model is enabled but the call fails or the JSON is not an allowlisted tool, the playbook action is used. Each call's timeout is the smaller of 20 seconds and the time left in the run's budget, and no call starts once the budget is spent. A failed call is logged and recorded in the audit trail by exception type only, never with the key, URL, or model text.
 
 ## HTTP contract
 

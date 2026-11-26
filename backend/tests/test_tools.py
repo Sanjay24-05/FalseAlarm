@@ -38,7 +38,7 @@ def test_planner_schema_rejects_unknown_tool():
 def test_llm_invalid_response_retries_once_then_fails(monkeypatch):
     calls = {"n": 0}
 
-    def fake(_summary, _settings):
+    def fake(_summary, _settings, **_kwargs):
         calls["n"] += 1
         if calls["n"] == 1:
             return "not json"

@@ -394,14 +394,15 @@ def _execute(investigation_id: str) -> dict:
             settings.max_window_expansions,
         )
         summary = bounded_summary(alert, state.evidence, _open_questions(state))
-        action, source = choose_action(fallback, summary, settings)
+        deadline = time.monotonic() + settings.max_seconds - (time.perf_counter() - state.started)
+        action, source, llm_errors = choose_action(fallback, summary, settings, deadline=deadline)
         if action is None:
             return _finalize(state, "completed", "completed")
-        details = {}
+        details: dict = {"llm_errors": llm_errors} if llm_errors else {}
         if source == "llm":
             reason = _override_reason(state, action, fallback, settings)
             if reason is not None:
-                details = {"override_reason": reason, "proposed_tool": action.tool}
+                details.update({"override_reason": reason, "proposed_tool": action.tool})
                 action, source = fallback, "playbook_override"
         _audit(
             state,

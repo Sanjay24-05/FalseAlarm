@@ -61,7 +61,7 @@ def test_loop_records_an_unscoped_proposal_as_rejected(monkeypatch, tmp_path):
 
     def propose_once(fallback, *args, **kwargs):
         action = next(proposals, None)
-        return (action, "test") if action is not None else real(fallback, *args, **kwargs)
+        return (action, "test", []) if action is not None else real(fallback, *args, **kwargs)
 
     monkeypatch.setattr(loop, "choose_action", propose_once)
     result = investigate()
