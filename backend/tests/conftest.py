@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from false_alarm.connectors.file_connector import clear_connector_cache
+from false_alarm.connectors import clear_connector_cache, clear_jsonl_cache
 from false_alarm.scenarios import load_catalog
 from false_alarm.settings import get_settings
 
@@ -13,6 +13,8 @@ from false_alarm.settings import get_settings
 def isolated_settings(tmp_path, monkeypatch):
     monkeypatch.setenv("FALSE_ALARM_DB_PATH", str(tmp_path / "false_alarm.db"))
     monkeypatch.setenv("FALSE_ALARM_LLM_ENABLED", "false")
+    monkeypatch.delenv("FALSE_ALARM_CONNECTOR", raising=False)
+    monkeypatch.delenv("FALSE_ALARM_LOGS_DIR", raising=False)
     # The test client sends Host: testserver.
     monkeypatch.setenv("FALSE_ALARM_ALLOWED_HOSTS", "127.0.0.1,localhost,testserver")
     monkeypatch.delenv("FALSE_ALARM_API_TOKEN", raising=False)
@@ -22,6 +24,7 @@ def isolated_settings(tmp_path, monkeypatch):
     monkeypatch.setenv("FALSE_ALARM_MAX_SECONDS", "60")
     get_settings.cache_clear()
     clear_connector_cache()
+    clear_jsonl_cache()
     load_catalog.cache_clear()
     yield
     get_settings.cache_clear()

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
-from pathlib import Path
 
 from false_alarm.domain.allowlist import ALLOWED_TOOLS
-from false_alarm.connectors.file_connector import FileConnector, QueryRequest
+from false_alarm.connectors.base import Connector
+from false_alarm.connectors.file_connector import QueryRequest
 from false_alarm.errors import UnknownToolError, UnscopedQueryError
 
 _QUERY_TOOLS = {
@@ -25,7 +26,7 @@ def execute_tool(
     *,
     window_start: datetime | None = None,
     window_end: datetime | None = None,
-    scenarios_dir: Path | None = None,
+    connectors: Mapping[str, Connector] | None = None,
     max_events: int = 200,
 ) -> dict:
     if name not in ALLOWED_TOOLS:
@@ -35,9 +36,9 @@ def execute_tool(
         return {"status": "completed", "kind": "finish", "events": [], "result": None, "source_type": None}
     if name == "expand_time_window":
         return {"status": "completed", "kind": "expand", "events": [], "result": None, "source_type": None}
-    if window_start is None or window_end is None or scenarios_dir is None:
-        raise TypeError("query tools require a window and a scenarios directory")
-    filename, source_type = _QUERY_TOOLS[name]
+    if window_start is None or window_end is None or connectors is None:
+        raise TypeError("query tools require a window and connectors")
+    _filename, source_type = _QUERY_TOOLS[name]
     try:
         requested = int(arguments.get("limit", max_events))
     except (TypeError, ValueError):
@@ -55,7 +56,7 @@ def execute_tool(
         end=window_end,
         limit=min(requested, max_events),
     )
-    result = FileConnector(scenarios_dir, filename, source_type).query(request, hard_cap=max_events)
+    result = connectors[source_type].query(request, hard_cap=max_events)
     return {
         "status": "completed",
         "kind": "query",

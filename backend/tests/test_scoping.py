@@ -5,6 +5,7 @@ from factories import ATTACKER, at, finance_access, flow, investigate, login, us
 
 from false_alarm.agent import loop
 from false_alarm.agent.tools import execute_tool
+from false_alarm.connectors import build_registry
 from false_alarm.errors import UnscopedQueryError
 from false_alarm.planner.actions import ToolAction
 from false_alarm.settings import get_settings
@@ -50,7 +51,7 @@ def test_execute_tool_refuses_an_unscoped_query():
             {"limit": 10},
             window_start=parse_datetime(at("12:00")),
             window_end=parse_datetime(at("14:00")),
-            scenarios_dir=get_settings().scenarios_dir,
+            connectors=build_registry(get_settings()),
         )
 
 

@@ -13,6 +13,7 @@ from uuid import uuid4
 from false_alarm.planner.context import Context, context_from_alert
 from false_alarm.agent.observe import event_fingerprint, make_observation, unknown_reputation_event
 from false_alarm.agent.tools import execute_tool
+from false_alarm.connectors.registry import build_registry
 from false_alarm.assessment.rules import assess
 from false_alarm.correlation.engine import build_timeline
 from false_alarm.db import (
@@ -377,6 +378,7 @@ def _execute(investigation_id: str) -> dict:
         },
     )
     _snapshot(state, status="running", stop_reason=None, timeline=[])
+    connectors = build_registry(settings)
 
     while True:
         if time.perf_counter() - state.started >= settings.max_seconds:
@@ -427,7 +429,7 @@ def _execute(investigation_id: str) -> dict:
                 arguments,
                 window_start=state.window_start,
                 window_end=state.window_end,
-                scenarios_dir=settings.scenarios_dir,
+                connectors=connectors,
                 max_events=settings.max_events,
             )
         except UnknownToolError as exc:

@@ -53,10 +53,11 @@ def _extend(target: list[str], values: object) -> None:
 
 
 @lru_cache
-def load_catalog(scenarios_dir: str) -> Catalog:
+def load_catalog(root: str, single: bool = False) -> Catalog:
+    """Org context from context.json in each scenario directory under root, or in root itself when single."""
     catalog = Catalog()
     assets_by_ip: dict[str, dict] = {}
-    for directory in scenario_dirs(Path(scenarios_dir)):
+    for directory in [Path(root)] if single else scenario_dirs(Path(root)):
         path = directory / "context.json"
         if not path.exists():
             continue
@@ -80,7 +81,10 @@ def load_catalog(scenarios_dir: str) -> Catalog:
 
 
 def get_catalog() -> Catalog:
-    return load_catalog(str(get_settings().scenarios_dir))
+    settings = get_settings()
+    if settings.connector == "jsonl" and settings.logs_dir is not None:
+        return load_catalog(str(settings.logs_dir), single=True)
+    return load_catalog(str(settings.scenarios_dir))
 
 
 def list_scenarios() -> list[dict[str, str]]:

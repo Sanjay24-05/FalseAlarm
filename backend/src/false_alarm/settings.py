@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -37,6 +38,8 @@ class Settings(BaseModel):
 
     db_path: Path
     scenarios_dir: Path
+    connector: Literal["file", "jsonl"]
+    logs_dir: Path | None
     llm_enabled: bool
     llm_base_url: str
     llm_api_key: str
@@ -60,13 +63,26 @@ class Settings(BaseModel):
         )
 
 
+def _connector() -> tuple[str, Path | None]:
+    connector = (os.environ.get("FALSE_ALARM_CONNECTOR") or "file").strip().lower()
+    if connector not in {"file", "jsonl"}:
+        raise ValueError(f"FALSE_ALARM_CONNECTOR must be file or jsonl, not {connector!r}")
+    logs_dir = (os.environ.get("FALSE_ALARM_LOGS_DIR") or "").strip()
+    if connector == "jsonl" and not logs_dir:
+        raise ValueError("FALSE_ALARM_CONNECTOR=jsonl needs FALSE_ALARM_LOGS_DIR, the directory holding the .jsonl files")
+    return connector, Path(logs_dir) if logs_dir else None
+
+
 @lru_cache
 def get_settings() -> Settings:
     db_default = REPO_ROOT / "backend" / "data" / "false_alarm.db"
     scenarios_default = REPO_ROOT / "data" / "scenarios"
+    connector, logs_dir = _connector()
     return Settings(
         db_path=Path(os.environ.get("FALSE_ALARM_DB_PATH", db_default)),
         scenarios_dir=Path(os.environ.get("FALSE_ALARM_SCENARIOS_DIR", scenarios_default)),
+        connector=connector,
+        logs_dir=logs_dir,
         llm_enabled=_flag("FALSE_ALARM_LLM_ENABLED", False),
         llm_base_url=os.environ.get("FALSE_ALARM_LLM_BASE_URL", ""),
         llm_api_key=os.environ.get("FALSE_ALARM_LLM_API_KEY", ""),

@@ -149,16 +149,25 @@ Every route declares a response model in `backend/src/false_alarm/api/schemas.py
 
 `POST /api/investigations` with `{ "alert_id": "..." }` returns `202` and `{ "id", "status": "running" }`. `GET /api/investigations/{id}` is the document the console polls.
 
-## Add a connector
+## Connectors
 
-v1 ships one connector, `FileConnector` in `backend/src/false_alarm/connectors/file_connector.py`. Every log family goes through the same call:
+Each log family (`authentication`, `firewall`, `endpoint`, `dns`, `related_alerts`, `threat_intel`) is served by a connector. `FALSE_ALARM_CONNECTOR` picks the implementation for all of them:
+
+| Value | Reads | Org context from |
+| --- | --- | --- |
+| `file` (default) | `<family>.json` in every directory under `FALSE_ALARM_SCENARIOS_DIR`, the demo data | each scenario's `context.json` |
+| `jsonl` | `<family>.jsonl` in `FALSE_ALARM_LOGS_DIR`, one JSON record per line, such as a SIEM export | `context.json` in the same directory |
+
+With `jsonl`, the demo data is not read, and lines that are not JSON objects with a valid timestamp are skipped and counted in a warning. `FALSE_ALARM_LOGS_DIR` is required for it.
+
+### Add a connector
+
+A connector is any object with a `source_type` and this method (the `Connector` protocol in `backend/src/false_alarm/connectors/base.py`):
 
 ```python
-result = connector.query(request)  # QueryRequest -> QueryResult
+def query(self, request: QueryRequest, *, hard_cap: int = 200) -> QueryResult: ...
 ```
 
-`QueryRequest` fields are `iocs`, `user`, `host`, `start`, `end`, and `limit`. `QueryResult` fields are `source`, `query`, `window`, `timestamp`, `events`, `truncated`.
+`QueryRequest` fields are `iocs`, `user`, `host`, `start`, `end`, and `limit`. `QueryResult` fields are `source`, `query`, `window`, `timestamp`, `events`, `truncated`. Events use the normalized keys the rules read: `timestamp`, `username`, `hostname`, `src_ip`, `dst_ip`, `dst_host`, `action`, `direction`, `bytes`, `severity`, `indicator`, `indicator_type`, `reputation`, `domains`, and `hashes`.
 
-`FileConnector.query` also takes `hard_cap`, which clamps `limit`. It reads one JSON file from each scenario directory, normalizes each record, filters by the request, and sets `source` to `file:<source_type>`. Threat-intelligence rows are matched on `iocs` and are not filtered by the time window. Other families are filtered by time, user, host, and IOCs.
-
-A new connector implements that same `query(request) -> result` method and returns events with the normalized keys the rules already read: `timestamp`, `username`, `hostname`, `src_ip`, `dst_ip`, `dst_host`, `action`, `direction`, `bytes`, `severity`, `indicator`, `indicator_type`, `reputation`, `domains`, and `hashes`. There is no plugin registry. `execute_tool` in `backend/src/false_alarm/agent/tools.py` constructs `FileConnector` for each query tool. Point that call at the new connector for the log family it should serve.
+For a source that yields records, call `normalize_log` on each record and pass the results to `select_events`; both are in `file_connector.py`, and `JsonlConnector` in `jsonl.py` is a short example. `select_events` applies the filters, keeps the newest events when `hard_cap` truncates, and matches threat intelligence on `iocs` without the time window. Register the connector in `build_registry` in `connectors/registry.py`.

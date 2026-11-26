@@ -234,49 +234,55 @@ class FileConnector:
         return events
 
     def query(self, request: QueryRequest, *, hard_cap: int = 200) -> QueryResult:
-        effective = max(0, min(int(request.limit), int(hard_cap)))
-        apply_time = self.source_type != "threat_intel"
+        return select_events(f"file:{self.source_type}", self.source_type, self._load(), request, hard_cap)
+
+
+def select_events(
+    source: str, source_type: str, events: list[dict[str, Any]], request: QueryRequest, hard_cap: int
+) -> QueryResult:
+    """Filter normalized events by the request, cap them, and describe the query. Shared by record connectors.
+
+    Reputation records match on indicator and ignore the window. When the cap truncates log events, the newest
+    are kept: the activity an alert is about comes after the routine activity.
+    """
+    effective = max(0, min(int(request.limit), int(hard_cap)))
+    apply_time = source_type != "threat_intel"
+    matched = [event for event in events if event_matches(event, request, apply_time=apply_time)]
+    if source_type == "threat_intel":
+        wanted = {item.casefold() for item in request.iocs if item}
         matched = [
             event
-            for event in self._load()
-            if event_matches(event, request, apply_time=apply_time)
+            for event in matched
+            if wanted and str(event.get("indicator") or "").casefold() in wanted
         ]
-        if self.source_type == "threat_intel":
-            wanted = {item.casefold() for item in request.iocs if item}
-            matched = [
-                event
-                for event in matched
-                if wanted and str(event.get("indicator") or "").casefold() in wanted
-            ]
-            matched.sort(key=lambda event: str(event.get("indicator") or ""))
-        else:
-            matched.sort(key=lambda event: (str(event.get("timestamp") or ""), str(event.get("username") or "")))
-        truncated = len(matched) > effective
-        # Keep the newest events: the activity an alert is about comes after the routine activity.
-        keep_newest = truncated and self.source_type != "threat_intel"
-        chosen = matched[len(matched) - effective :] if keep_newest else matched[:effective]
-        observed = utc_iso(utc_now())
-        if self.source_type == "threat_intel":
-            stamped = []
-            for event in chosen:
-                copy = dict(event)
-                copy["timestamp"] = observed
-                stamped.append(copy)
-            chosen = stamped
-        start = utc_iso(_aware(request.start))
-        end = utc_iso(_aware(request.end))
-        return QueryResult(
-            source=f"file:{self.source_type}",
-            query={
-                "iocs": list(request.iocs),
-                "user": request.user,
-                "host": request.host,
-                "start": start,
-                "end": end,
-                "limit": effective,
-            },
-            window={"start": start, "end": end},
-            timestamp=observed,
-            events=chosen,
-            truncated=truncated,
-        )
+        matched.sort(key=lambda event: str(event.get("indicator") or ""))
+    else:
+        matched.sort(key=lambda event: (str(event.get("timestamp") or ""), str(event.get("username") or "")))
+    truncated = len(matched) > effective
+    keep_newest = truncated and source_type != "threat_intel"
+    chosen = matched[len(matched) - effective :] if keep_newest else matched[:effective]
+    observed = utc_iso(utc_now())
+    if source_type == "threat_intel":
+        stamped = []
+        for event in chosen:
+            copy = dict(event)
+            copy["timestamp"] = observed
+            stamped.append(copy)
+        chosen = stamped
+    start = utc_iso(_aware(request.start))
+    end = utc_iso(_aware(request.end))
+    return QueryResult(
+        source=source,
+        query={
+            "iocs": list(request.iocs),
+            "user": request.user,
+            "host": request.host,
+            "start": start,
+            "end": end,
+            "limit": effective,
+        },
+        window={"start": start, "end": end},
+        timestamp=observed,
+        events=chosen,
+        truncated=truncated,
+    )
