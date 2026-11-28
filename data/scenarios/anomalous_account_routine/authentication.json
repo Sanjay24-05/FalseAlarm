@@ -1,0 +1,10 @@
+[
+  {
+    "timestamp": "2026-05-17T16:00:00Z",
+    "username": "tsato",
+    "src_ip": "10.8.0.60",
+    "dst_ip": "10.0.0.20",
+    "hostname": "DC-01",
+    "action": "success"
+  }
+]

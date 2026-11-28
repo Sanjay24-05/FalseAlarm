@@ -10,7 +10,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from false_alarm.scenarios import scenario_dirs
-from false_alarm.util import parse_datetime, unique_strings, utc_iso, utc_now
+from false_alarm.util import canonical_ip, parse_datetime, unique_strings, utc_iso, utc_now
 
 _CACHE: dict[tuple, list[dict[str, Any]]] = {}
 _ACTION_ALIASES = {
@@ -45,6 +45,8 @@ class QueryResult(BaseModel):
     timestamp: str
     events: list[dict[str, Any]]
     truncated: bool
+    # Records in the source that could not be read at all, whether or not they would have matched.
+    skipped: int = 0
 
 
 def clear_connector_cache() -> None:
@@ -83,6 +85,24 @@ def _text(record: dict, *keys: str) -> str | None:
     return None
 
 
+def _address(record: dict, key: str) -> str | None:
+    text = _text(record, key)
+    return canonical_ip(text) or text
+
+
+def _timestamp(value: object) -> str | None:
+    """ISO 8601 text, or epoch seconds or milliseconds, as UTC ISO text."""
+    try:
+        if isinstance(value, str):
+            return utc_iso(parse_datetime(value))
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            seconds = value / 1000 if abs(value) >= 100_000_000_000 else value
+            return utc_iso(datetime.fromtimestamp(seconds, timezone.utc))
+    except (ValueError, OverflowError, OSError):
+        return None
+    return None
+
+
 def normalize_log(source_type: str, record: dict, scenario: str) -> dict[str, Any] | None:
     if not isinstance(record, dict):
         return None
@@ -96,20 +116,16 @@ def normalize_log(source_type: str, record: dict, scenario: str) -> dict[str, An
         event["reputation"] = (_text(record, "reputation") or "unknown").lower()
         return event
 
-    raw_time = record.get("timestamp")
-    if not isinstance(raw_time, str):
-        return None
-    try:
-        timestamp = utc_iso(parse_datetime(raw_time))
-    except ValueError:
+    timestamp = _timestamp(record.get("timestamp", record.get("@timestamp")))
+    if timestamp is None:
         return None
     event = _blank_event(scenario, timestamp)
     event["username"] = _text(record, "username", "user")
     event["hostname"] = _text(record, "hostname", "host", "src_host")
-    event["src_ip"] = _text(record, "src_ip")
+    event["src_ip"] = _address(record, "src_ip")
     event["dst_host"] = _text(record, "dst_host")
-    event["resolved_ip"] = _text(record, "resolved_ip")
-    event["dst_ip"] = _text(record, "dst_ip") or event["resolved_ip"]
+    event["resolved_ip"] = _address(record, "resolved_ip")
+    event["dst_ip"] = _address(record, "dst_ip") or event["resolved_ip"]
     action = _text(record, "action")
     if action:
         event["action"] = _ACTION_ALIASES.get(action.lower(), action.lower())
@@ -229,49 +245,62 @@ class FileConnector:
         return events
 
     def query(self, request: QueryRequest, *, hard_cap: int = 200) -> QueryResult:
-        effective = max(0, min(int(request.limit), int(hard_cap)))
-        apply_time = self.source_type != "threat_intel"
+        return select_events(f"file:{self.source_type}", self.source_type, self._load(), request, hard_cap)
+
+
+def select_events(
+    source: str,
+    source_type: str,
+    events: list[dict[str, Any]],
+    request: QueryRequest,
+    hard_cap: int,
+    *,
+    skipped: int = 0,
+) -> QueryResult:
+    """Filter normalized events by the request, cap them, and describe the query. Shared by record connectors.
+
+    Reputation records match on indicator and ignore the window. When the cap truncates log events, the newest
+    are kept: the activity an alert is about comes after the routine activity.
+    """
+    effective = max(0, min(int(request.limit), int(hard_cap)))
+    apply_time = source_type != "threat_intel"
+    matched = [event for event in events if event_matches(event, request, apply_time=apply_time)]
+    if source_type == "threat_intel":
+        wanted = {item.casefold() for item in request.iocs if item}
         matched = [
             event
-            for event in self._load()
-            if event_matches(event, request, apply_time=apply_time)
+            for event in matched
+            if wanted and str(event.get("indicator") or "").casefold() in wanted
         ]
-        if self.source_type == "threat_intel":
-            wanted = {item.casefold() for item in request.iocs if item}
-            matched = [
-                event
-                for event in matched
-                if wanted and str(event.get("indicator") or "").casefold() in wanted
-            ]
-            matched.sort(key=lambda event: str(event.get("indicator") or ""))
-        else:
-            matched.sort(key=lambda event: (str(event.get("timestamp") or ""), str(event.get("username") or "")))
-        truncated = len(matched) > effective
-        # Keep the newest events: the activity an alert is about comes after the routine activity.
-        keep_newest = truncated and self.source_type != "threat_intel"
-        chosen = matched[len(matched) - effective :] if keep_newest else matched[:effective]
-        observed = utc_iso(utc_now())
-        if self.source_type == "threat_intel":
-            stamped = []
-            for event in chosen:
-                copy = dict(event)
-                copy["timestamp"] = observed
-                stamped.append(copy)
-            chosen = stamped
-        start = utc_iso(_aware(request.start))
-        end = utc_iso(_aware(request.end))
-        return QueryResult(
-            source=f"file:{self.source_type}",
-            query={
-                "iocs": list(request.iocs),
-                "user": request.user,
-                "host": request.host,
-                "start": start,
-                "end": end,
-                "limit": effective,
-            },
-            window={"start": start, "end": end},
-            timestamp=observed,
-            events=chosen,
-            truncated=truncated,
-        )
+        matched.sort(key=lambda event: str(event.get("indicator") or ""))
+    else:
+        matched.sort(key=lambda event: (str(event.get("timestamp") or ""), str(event.get("username") or "")))
+    truncated = len(matched) > effective
+    keep_newest = truncated and source_type != "threat_intel"
+    chosen = matched[len(matched) - effective :] if keep_newest else matched[:effective]
+    observed = utc_iso(utc_now())
+    if source_type == "threat_intel":
+        stamped = []
+        for event in chosen:
+            copy = dict(event)
+            copy["timestamp"] = observed
+            stamped.append(copy)
+        chosen = stamped
+    start = utc_iso(_aware(request.start))
+    end = utc_iso(_aware(request.end))
+    return QueryResult(
+        source=source,
+        query={
+            "iocs": list(request.iocs),
+            "user": request.user,
+            "host": request.host,
+            "start": start,
+            "end": end,
+            "limit": effective,
+        },
+        window={"start": start, "end": end},
+        timestamp=observed,
+        events=chosen,
+        truncated=truncated,
+        skipped=skipped,
+    )

@@ -1,0 +1,7 @@
+{
+  "id": "scheduled_backup_upload",
+  "title": "Scheduled backup upload",
+  "description": "An employee on the corporate VPN uploads 30 MB to the company's backup provider, within the user's usual outbound volume.",
+  "expected_verdict": "likely_benign",
+  "expected_playbook": "outbound"
+}

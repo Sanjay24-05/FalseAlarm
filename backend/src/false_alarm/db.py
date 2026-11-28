@@ -12,33 +12,62 @@ from false_alarm.util import utc_iso, utc_now
 
 _lock = threading.Lock()
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS alerts (
-    id TEXT PRIMARY KEY,
-    fingerprint TEXT NOT NULL UNIQUE,
-    document TEXT NOT NULL,
-    created_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS investigations (
-    id TEXT PRIMARY KEY,
-    alert_id TEXT NOT NULL,
-    status TEXT NOT NULL,
-    document TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_investigations_alert ON investigations(alert_id);
-"""
+# Each entry upgrades the schema by one version. PRAGMA user_version records the version a file is at.
+# Version 1 is the schema as first released, so files created before migrations existed upgrade cleanly.
+MIGRATIONS: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS alerts (
+        id TEXT PRIMARY KEY,
+        fingerprint TEXT NOT NULL UNIQUE,
+        document TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS investigations (
+        id TEXT PRIMARY KEY,
+        alert_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        document TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_investigations_alert ON investigations(alert_id);
+    """,
+    # The queue and history read these columns instead of parsing every investigation document.
+    """
+    ALTER TABLE investigations ADD COLUMN verdict TEXT;
+    ALTER TABLE investigations ADD COLUMN stop_reason TEXT;
+    UPDATE investigations SET
+        verdict = json_extract(document, '$.assessment.verdict'),
+        stop_reason = json_extract(document, '$.stop_reason');
+    -- Covers the queue query, so it never reads rows whose documents fill overflow pages.
+    CREATE INDEX IF NOT EXISTS idx_investigations_latest ON investigations(alert_id, updated_at, verdict, id);
+    """,
+)
+SCHEMA_VERSION = len(MIGRATIONS)
+# Separate from _lock: writers hold _lock while they connect, and connecting may migrate.
+_migration_lock = threading.Lock()
+
+
+def _migrate(connection: sqlite3.Connection) -> None:
+    connection.execute("PRAGMA journal_mode=WAL")
+    version = connection.execute("PRAGMA user_version").fetchone()[0]
+    for number, script in enumerate(MIGRATIONS[version:], start=version + 1):
+        # executescript commits first, so the version bump is part of the same script.
+        connection.executescript(f"BEGIN IMMEDIATE;\n{script}\nPRAGMA user_version = {number};\nCOMMIT;")
 
 
 def connect() -> sqlite3.Connection:
     settings = get_settings()
+    path = str(settings.db_path)
     settings.db_path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(settings.db_path, timeout=30)
+    connection = sqlite3.connect(path, timeout=30)
     connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA journal_mode=WAL")
     connection.execute("PRAGMA foreign_keys=ON")
-    connection.executescript(SCHEMA)
+    connection.execute("PRAGMA synchronous=NORMAL")
+    # Reading the version is cheap, and it also recreates the schema when the file was deleted while running.
+    if connection.execute("PRAGMA user_version").fetchone()[0] < SCHEMA_VERSION:
+        with _migration_lock:
+            _migrate(connection)
     return connection
 
 
@@ -119,25 +148,47 @@ def list_alert_rows() -> list[dict[str, Any]]:
     return [_loads(row["document"]) for row in rows]
 
 
-def latest_verdicts() -> dict[str, str]:
+def _verdict(document: dict[str, Any]) -> str | None:
+    verdict = (document.get("assessment") or {}).get("verdict")
+    return verdict if isinstance(verdict, str) and verdict else None
+
+
+def latest_verdicts() -> dict[str, tuple[str, str | None]]:
+    """For each alert with a run: the run its queue verdict comes from, and that verdict.
+
+    That is the most recently updated run with a verdict, or the most recent run when none has one.
+    """
     connection = connect()
     try:
         rows = connection.execute(
-            "SELECT alert_id, document FROM investigations ORDER BY updated_at DESC"
+            """
+            SELECT alert_id, id, verdict FROM (
+                SELECT alert_id, id, verdict, ROW_NUMBER() OVER (
+                    PARTITION BY alert_id ORDER BY verdict IS NULL, updated_at DESC, rowid DESC
+                ) AS rank
+                FROM investigations
+            ) WHERE rank = 1
+            """
         ).fetchall()
     finally:
         connection.close()
-    verdicts: dict[str, str] = {}
-    for row in rows:
-        alert_id = row["alert_id"]
-        if alert_id in verdicts:
-            continue
-        document = _loads(row["document"])
-        assessment = document.get("assessment") or {}
-        verdict = assessment.get("verdict")
-        if isinstance(verdict, str) and verdict:
-            verdicts[alert_id] = verdict
-    return verdicts
+    return {row["alert_id"]: (row["id"], row["verdict"]) for row in rows}
+
+
+def list_investigations_for_alert(alert_id: str) -> list[dict[str, Any]]:
+    """Summaries of an alert's runs, newest first."""
+    connection = connect()
+    try:
+        rows = connection.execute(
+            """
+            SELECT id, status, stop_reason, verdict, created_at, updated_at FROM investigations
+            WHERE alert_id = ? ORDER BY created_at DESC, rowid DESC
+            """,
+            (alert_id,),
+        ).fetchall()
+    finally:
+        connection.close()
+    return [dict(row) for row in rows]
 
 
 def running_investigation_ids() -> list[str]:
@@ -165,13 +216,16 @@ def insert_investigation(document: dict[str, Any]) -> str | None:
                 return running["id"]
             connection.execute(
                 """
-                INSERT INTO investigations (id, alert_id, status, document, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO investigations
+                    (id, alert_id, status, verdict, stop_reason, document, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     document["id"],
                     document["alert_id"],
                     document["status"],
+                    _verdict(document),
+                    document.get("stop_reason"),
                     _dumps(document),
                     stamp,
                     stamp,
@@ -195,12 +249,14 @@ def update_investigation(document: dict[str, Any]) -> None:
             connection.execute(
                 """
                 UPDATE investigations
-                SET alert_id = ?, status = ?, document = ?, updated_at = ?
+                SET alert_id = ?, status = ?, verdict = ?, stop_reason = ?, document = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 (
                     document["alert_id"],
                     document["status"],
+                    _verdict(document),
+                    document.get("stop_reason"),
                     _dumps(document),
                     stamp,
                     document["id"],

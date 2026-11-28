@@ -1,0 +1,12 @@
+[
+  {
+    "timestamp": "2026-05-10T21:00:00Z",
+    "username": "nwu",
+    "hostname": "WS-NWU",
+    "src_ip": "10.8.0.50",
+    "dst_ip": "192.0.2.10",
+    "action": "allow",
+    "direction": "outbound",
+    "bytes": 30000000
+  }
+]

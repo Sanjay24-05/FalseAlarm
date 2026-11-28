@@ -7,10 +7,6 @@ class AlertNotFound(Exception):
     """Raised when an investigation targets an alert that is not stored."""
 
 
-class InvestigationNotFound(Exception):
-    """Raised when an investigation id is not stored."""
-
-
 class ScenarioNotFound(Exception):
     """Raised when a scenario id does not exist on disk."""
 

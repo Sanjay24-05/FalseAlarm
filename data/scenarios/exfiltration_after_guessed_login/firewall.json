@@ -1,0 +1,12 @@
+[
+  {
+    "timestamp": "2026-05-10T11:20:00Z",
+    "username": "dkim",
+    "hostname": "WS-DKIM",
+    "src_ip": "10.0.6.12",
+    "dst_ip": "198.51.100.200",
+    "action": "allow",
+    "direction": "outbound",
+    "bytes": 300000000
+  }
+]

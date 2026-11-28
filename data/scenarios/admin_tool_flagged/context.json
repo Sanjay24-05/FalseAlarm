@@ -1,0 +1,22 @@
+{
+  "assets": [],
+  "corporate_vpn_ranges": [
+    "10.8.0.0/24"
+  ],
+  "known_good_ranges": [
+    "10.8.0.0/24"
+  ],
+  "scanner_ranges": [],
+  "baselines": {
+    "rpatel": {
+      "typical_sources": [
+        "10.8.0.40"
+      ],
+      "typical_hosts": [
+        "WS-RPATEL"
+      ],
+      "typical_file_servers": [],
+      "typical_outbound_bytes": 5000000
+    }
+  }
+}

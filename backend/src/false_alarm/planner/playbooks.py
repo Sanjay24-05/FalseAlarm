@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 
-from false_alarm.agent.context import Context
+from false_alarm.planner.context import Context
 from false_alarm.domain.models import Question
 from false_alarm.planner.actions import ToolAction
 from false_alarm.util import unique_strings, utc_iso
@@ -30,7 +30,6 @@ class QuestionTemplate:
     text: str
     tool: str
     requires_any: tuple[str, ...] = ()
-    requires_all: tuple[str, ...] = ()
 
     def as_question(self, answered: bool) -> Question:
         return Question(
@@ -160,12 +159,22 @@ def questions_for(playbook: str) -> list[QuestionTemplate]:
     return _auth_questions()
 
 
+def _unlooked_indicators(context: Context) -> list[str]:
+    values: list[str | None] = [context.src_ip] if context.src_ip else []
+    values.extend(sorted(context.external_ips))
+    values.extend(sorted(context.domains))
+    values.extend(sorted(context.hashes))
+    looked_up = {item.casefold() for item in context.looked_up}
+    return [item for item in unique_strings(values) if item.casefold() not in looked_up]
+
+
 def _available(question: QuestionTemplate, context: Context, expansions: int, max_expansions: int) -> bool:
     if question.tool == "expand_time_window":
         return context.needs_expansion and expansions < max_expansions
+    if question.tool == "lookup_threat_intel":
+        # Indicators keep arriving as evidence is stored, so the lookup stays open while any are unrated.
+        return bool(_unlooked_indicators(context))
     if question.id in context.answered:
-        return False
-    if question.requires_all and not all(context.known(key) for key in question.requires_all):
         return False
     if question.requires_any and not any(context.known(key) for key in question.requires_any):
         return False
@@ -195,10 +204,13 @@ def covered_questions(
     return covered
 
 
+def askable_questions(questions: list[QuestionTemplate], context: Context) -> list[QuestionTemplate]:
+    """Questions whose inputs are known and that have not been answered."""
+    return [question for question in questions if question.tool not in CONTROL_TOOLS and _available(question, context, 0, 0)]
+
+
 def open_question_count(questions: list[QuestionTemplate], context: Context) -> int:
-    return sum(
-        1 for question in questions if question.tool not in CONTROL_TOOLS and _available(question, context, 0, 0)
-    )
+    return len(askable_questions(questions, context))
 
 
 def next_question(
@@ -232,13 +244,7 @@ def build_arguments(
         args["iocs"] = [context.src_ip] if context.src_ip else []
         return args
     if question.tool == "lookup_threat_intel":
-        values: list[str | None] = []
-        if context.src_ip:
-            values.append(context.src_ip)
-        values.extend(sorted(context.external_ips))
-        values.extend(sorted(context.domains))
-        values.extend(sorted(context.hashes))
-        args["iocs"] = unique_strings(values)
+        args["iocs"] = _unlooked_indicators(context)
         return args
     if question.tool in {"query_firewall", "query_endpoint", "query_dns", "query_related_alerts"}:
         if context.username:

@@ -1,0 +1,22 @@
+{
+  "source": "demo-siem",
+  "name": "Possible malware: administration tool flagged",
+  "description": "Endpoint protection flagged a scripting tool on WS-RPATEL for user rpatel.",
+  "severity": "medium",
+  "detected_at": "2026-05-03T15:10:00Z",
+  "src_ip": "10.8.0.40",
+  "dst_ip": null,
+  "username": "rpatel",
+  "hostname": "WS-RPATEL",
+  "file_hashes": [
+    "9e107d9d372bb6826bd81d3542a419d6"
+  ],
+  "domains": [],
+  "urls": [],
+  "mitre_techniques": [
+    "T1059"
+  ],
+  "raw": {
+    "rule_id": "EDR-HEURISTIC"
+  }
+}

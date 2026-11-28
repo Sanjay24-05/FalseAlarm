@@ -1,0 +1,14 @@
+[
+  {
+    "indicator": "9e107d9d372bb6826bd81d3542a419d6",
+    "type": "md5",
+    "reputation": "clean",
+    "source": "local-feed"
+  },
+  {
+    "indicator": "10.8.0.40",
+    "type": "ipv4",
+    "reputation": "clean",
+    "source": "local-feed"
+  }
+]

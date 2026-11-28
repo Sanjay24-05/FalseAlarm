@@ -1,0 +1,22 @@
+{
+  "assets": [],
+  "corporate_vpn_ranges": [
+    "10.8.0.0/24"
+  ],
+  "known_good_ranges": [
+    "10.8.0.0/24"
+  ],
+  "scanner_ranges": [],
+  "baselines": {
+    "dkim": {
+      "typical_sources": [
+        "10.8.0.32"
+      ],
+      "typical_hosts": [
+        "WS-DKIM"
+      ],
+      "typical_file_servers": [],
+      "typical_outbound_bytes": 5000000
+    }
+  }
+}

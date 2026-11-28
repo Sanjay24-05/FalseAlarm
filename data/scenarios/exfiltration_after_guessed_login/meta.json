@@ -1,0 +1,7 @@
+{
+  "id": "exfiltration_after_guessed_login",
+  "title": "Exfiltration after a guessed sign-in",
+  "description": "An outside address guesses an employee's password, signs in, and the employee's workstation then sends 300 MB to a known-bad address.",
+  "expected_verdict": "confirmed_threat",
+  "expected_playbook": "outbound"
+}

@@ -1,0 +1,7 @@
+{
+  "id": "anomalous_account_routine",
+  "title": "Anomalous account, routine",
+  "description": "A behavior anomaly alert on an employee account that signed in from the corporate VPN and used the team file server as usual.",
+  "expected_verdict": "likely_benign",
+  "expected_playbook": "generic"
+}

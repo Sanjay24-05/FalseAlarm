@@ -39,14 +39,44 @@ def minute_bucket(value: datetime) -> str:
     return utc_iso(bucket)
 
 
+# Ranges that stay inside an organization. Documentation and benchmark ranges are deliberately absent:
+# Python calls them private, but in logs they stand for public addresses.
+_INTERNAL_NETWORKS = tuple(
+    ipaddress.ip_network(item)
+    for item in (
+        "0.0.0.0/8",
+        "10.0.0.0/8",
+        "100.64.0.0/10",
+        "127.0.0.0/8",
+        "169.254.0.0/16",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "224.0.0.0/4",
+        "::/128",
+        "::1/128",
+        "fc00::/7",
+        "fe80::/10",
+        "ff00::/8",
+    )
+)
+
+
+def canonical_ip(value: object) -> str | None:
+    """The address in standard form, or None when the value is not an IP address."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return str(ipaddress.ip_address(value.strip()))
+    except ValueError:
+        return None
+
+
 def is_internal_ip(value: str) -> bool:
     try:
         address = ipaddress.ip_address(value)
     except ValueError:
         return False
-    return bool(
-        address.is_private or address.is_loopback or address.is_link_local or address.is_multicast
-    )
+    return any(address.version == network.version and address in network for network in _INTERNAL_NETWORKS)
 
 
 def is_external_ip(value: str) -> bool:

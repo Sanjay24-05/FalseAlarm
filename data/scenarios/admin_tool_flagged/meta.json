@@ -1,0 +1,7 @@
+{
+  "id": "admin_tool_flagged",
+  "title": "Admin tool flagged",
+  "description": "Endpoint protection flags an administration tool that an employee runs after signing in from the corporate VPN. The binary is known clean.",
+  "expected_verdict": "likely_benign",
+  "expected_playbook": "malware"
+}

@@ -92,6 +92,17 @@ def test_an_unscoped_proposal_is_replaced(model):
     assert _planner(result)[0]["source"] == "playbook_override"
 
 
+def test_a_model_cannot_widen_the_case_to_another_user(model):
+    result = model(
+        {"tool": "query_firewall", "arguments": {"user": "alice"}, "question": "x"},
+        {"tool": "query_firewall", "arguments": {"host": "WS-ALICE"}, "question": "x"},
+        {"tool": "query_dns", "arguments": {"iocs": ["198.51.100.250"]}, "question": "x"},
+    )
+    assert all("alice" not in item["entities"]["users"] for item in result["evidence"])
+    reasons = [entry.get("override_reason", "") for entry in _planner(result)[:3]]
+    assert all("outside this case" in reason for reason in reasons), reasons
+
+
 def test_a_looping_model_cannot_spend_the_budget(model):
     again = {"tool": "query_dns", "arguments": {"user": "bob"}, "question": "again"}
     result = model(otherwise=again)

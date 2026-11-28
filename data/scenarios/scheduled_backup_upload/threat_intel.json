@@ -1,0 +1,14 @@
+[
+  {
+    "indicator": "192.0.2.10",
+    "type": "ipv4",
+    "reputation": "clean",
+    "source": "local-feed"
+  },
+  {
+    "indicator": "10.8.0.50",
+    "type": "ipv4",
+    "reputation": "clean",
+    "source": "local-feed"
+  }
+]

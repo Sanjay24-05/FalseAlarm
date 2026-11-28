@@ -1,0 +1,7 @@
+{
+  "id": "anomalous_account_compromise",
+  "title": "Anomalous account, compromised",
+  "description": "A behavior anomaly alert on an employee account. The account was taken over from outside and used to reach the HR file server.",
+  "expected_verdict": "confirmed_threat",
+  "expected_playbook": "generic"
+}

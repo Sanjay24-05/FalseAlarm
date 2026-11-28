@@ -1,0 +1,31 @@
+{
+  "assets": [
+    {
+      "hostname": "FS-TEAM",
+      "ip": "10.0.1.80",
+      "sensitivity": "low",
+      "role": "file-server"
+    }
+  ],
+  "corporate_vpn_ranges": [
+    "10.8.0.0/24"
+  ],
+  "known_good_ranges": [
+    "10.8.0.0/24"
+  ],
+  "scanner_ranges": [],
+  "baselines": {
+    "tsato": {
+      "typical_sources": [
+        "10.8.0.60"
+      ],
+      "typical_hosts": [
+        "WS-TSATO"
+      ],
+      "typical_file_servers": [
+        "FS-TEAM"
+      ],
+      "typical_outbound_bytes": 5000000
+    }
+  }
+}

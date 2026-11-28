@@ -1,0 +1,18 @@
+{
+  "source": "demo-siem",
+  "name": "Unusual account activity",
+  "description": "Behavior score for tsato exceeded its threshold.",
+  "severity": "low",
+  "detected_at": "2026-05-17T16:20:00Z",
+  "src_ip": "10.8.0.60",
+  "dst_ip": null,
+  "username": "tsato",
+  "hostname": "WS-TSATO",
+  "file_hashes": [],
+  "domains": [],
+  "urls": [],
+  "mitre_techniques": [],
+  "raw": {
+    "rule_id": "UEBA-SCORE"
+  }
+}

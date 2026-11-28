@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from false_alarm.agent.allowlist import ALLOWED_TOOLS
+from false_alarm.domain.allowlist import ALLOWED_TOOLS
 from false_alarm.agent.tools import execute_tool
 from false_alarm.errors import UnknownToolError
 from false_alarm.planner.actions import ToolAction

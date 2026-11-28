@@ -12,7 +12,7 @@ _HASH_TYPES = {"md5", "sha1", "sha256", "hash"}
 
 def _indicator_bucket(indicator: str, indicator_type: str | None) -> str:
     kind = (indicator_type or "").lower()
-    if kind in {"ipv4", "ip"}:
+    if kind in {"ipv4", "ipv6", "ip"}:
         return "ip"
     if kind in _HASH_TYPES:
         return "hash"
@@ -121,7 +121,7 @@ def unknown_reputation_event(indicator: str, observed_at: str) -> dict:
     }
     bucket = _indicator_bucket(indicator, None)
     if bucket == "ip":
-        event["indicator_type"] = "ipv4"
+        event["indicator_type"] = "ipv6" if ":" in indicator else "ipv4"
     elif bucket == "hash":
         event["indicator_type"] = {32: "md5", 40: "sha1", 64: "sha256"}.get(len(indicator), "hash")
         event["hashes"] = [indicator.lower()]
